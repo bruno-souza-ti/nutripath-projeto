@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../main.dart';
+import '../database/nutri_repository.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -55,12 +56,28 @@ class _LoginScreenState extends State<LoginScreen>
 
     setState(() => _isLoading = true);
 
-    // Simulação de autenticação (substituir por lógica real)
-    await Future.delayed(const Duration(milliseconds: 1200));
+    final repo = NutriRepository();
+    final usuario = await repo.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
 
     if (mounted) {
       setState(() => _isLoading = false);
-      Navigator.pushReplacementNamed(context, AppRoutes.dashboard);
+      if (usuario != null) {
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.dashboard,
+          arguments: {'usuarioId': usuario['id'], 'nome': usuario['nome']},
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('E-mail ou senha incorretos.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -318,7 +335,7 @@ class _LoginScreenState extends State<LoginScreen>
           style: TextStyle(color: AppTheme.textMedium, fontSize: 14),
         ),
         GestureDetector(
-          onTap: () {},
+          onTap: () => Navigator.pushNamed(context, AppRoutes.register),
           child: const Text(
             'Criar conta',
             style: TextStyle(

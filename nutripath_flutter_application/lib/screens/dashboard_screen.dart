@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../main.dart';
+import '../database/nutri_repository.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -13,14 +14,23 @@ class _DashboardScreenState extends State<DashboardScreen>
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
 
-  // Dados mockados – substituir por dados reais do SQLite
-  final String _userName = 'Ana';
-  final double _waterProgress = 0.6;
-  final double _calorieProgress = 0.73;
-  final int _consumedCalories = 1460;
-  final int _goalCalories = 2000;
-  final double _weightKg = 65.4;
-  final double _bmiValue = 22.8;
+  final _repo = NutriRepository();
+  int _usuarioId = 1;
+
+  // Dados do SQLite
+  String _userName = '';
+  double _waterProgress = 0;
+  double _calorieProgress = 0;
+  int _consumedCalories = 0;
+  int _goalCalories = 2000;
+  int _goalAguaMl = 2000;
+  int _aguaMl = 0;
+  double _weightKg = 0;
+  double _alturaCm = 0;
+  double _bmiValue = 0;
+  double _gorduraCorporal = 0;
+  double _massaMuscular = 0;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -35,6 +45,263 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
     _animController.forward();
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments as Map?;
+    if (args != null) {
+      _usuarioId = args['usuarioId'] ?? 1;
+    }
+    _carregarDados();
+  }
+
+  Future<void> _carregarDados() async {
+    setState(() => _isLoading = true);
+    final dados = await _repo.getDashboard(_usuarioId);
+    setState(() {
+      _userName = dados['nome'] ?? 'Usuário';
+      _consumedCalories = dados['calorias_consumidas'] ?? 0;
+      _goalCalories = dados['meta_calorias'] ?? 2000;
+      _aguaMl = dados['agua_ml'] ?? 0;
+      _goalAguaMl = dados['meta_agua_ml'] ?? 2000;
+      _weightKg = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
+      _alturaCm = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
+      _bmiValue = (dados['imc'] as num?)?.toDouble() ?? 0;
+      _gorduraCorporal = (dados['gordura_corporal'] as num?)?.toDouble() ?? 0;
+      _massaMuscular = (dados['massa_muscular'] as num?)?.toDouble() ?? 0;
+      _calorieProgress = _goalCalories > 0 ? _consumedCalories / _goalCalories : 0;
+      _waterProgress = _goalAguaMl > 0 ? _aguaMl / _goalAguaMl : 0;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _registrarAgua() async {
+    await _repo.registrarAgua(_usuarioId, 250);
+    await _carregarDados();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('💧 250ml registrados!'), backgroundColor: Colors.blue),
+      );
+    }
+  }
+
+  Future<void> _registrarRefeicao() async {
+    final descController = TextEditingController();
+    final calController = TextEditingController();
+    String tipoSelecionado = 'almoco';
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Registrar Refeição'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: descController, decoration: const InputDecoration(labelText: 'Descrição')),
+            const SizedBox(height: 8),
+            TextField(controller: calController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Calorias (kcal)')),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: tipoSelecionado,
+              items: const [
+                DropdownMenuItem(value: 'cafe_manha', child: Text('Café da manhã')),
+                DropdownMenuItem(value: 'almoco', child: Text('Almoço')),
+                DropdownMenuItem(value: 'lanche', child: Text('Lanche')),
+                DropdownMenuItem(value: 'jantar', child: Text('Jantar')),
+              ],
+              onChanged: (v) => tipoSelecionado = v ?? 'almoco',
+              decoration: const InputDecoration(labelText: 'Tipo'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () async {
+              if (descController.text.isNotEmpty && calController.text.isNotEmpty) {
+                await _repo.registrarRefeicao(
+                  usuarioId: _usuarioId,
+                  descricao: descController.text,
+                  calorias: int.tryParse(calController.text) ?? 0,
+                  tipo: tipoSelecionado,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                await _carregarDados();
+              }
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _registrarPeso() async {
+    final pesoController = TextEditingController();
+    final alturaController = TextEditingController();
+
+    // Pré-preenche a altura com o valor mais recente, se houver
+    if (_alturaCm > 0) {
+      alturaController.text = _alturaCm.toStringAsFixed(0);
+    }
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Text('⚖️', style: TextStyle(fontSize: 22)),
+            SizedBox(width: 8),
+            Text('Registrar Peso',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: pesoController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Peso (kg)',
+                hintText: 'Ex: 65.4',
+                prefixIcon: const Icon(Icons.monitor_weight_outlined, size: 20),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: alturaController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Altura (cm)',
+                hintText: 'Ex: 170',
+                prefixIcon: const Icon(Icons.height_rounded, size: 20),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'O IMC será calculado automaticamente.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () async {
+              final peso = double.tryParse(pesoController.text.replaceAll(',', '.'));
+              final altura = double.tryParse(alturaController.text.replaceAll(',', '.'));
+              if (peso != null && altura != null && altura > 0) {
+                await _repo.registrarPeso(
+                  usuarioId: _usuarioId,
+                  pesoKg: peso,
+                  alturaCm: altura,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                await _carregarDados();
+                if (mounted) {
+                  final imc = peso / ((altura / 100) * (altura / 100));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          '✅ Peso registrado! IMC: ${imc.toStringAsFixed(1)}'),
+                      backgroundColor: AppTheme.primary,
+                    ),
+                  );
+                }
+              } else {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text('Preencha peso e altura corretamente.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+            },
+            child: const Text('Salvar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _verHistorico() async {
+    final historico = await _repo.getHistoricoPeso(_usuarioId);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Text('📊', style: TextStyle(fontSize: 22)),
+            SizedBox(width: 8),
+            Text('Histórico de Peso',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: historico.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Nenhum registro ainda.',
+                      textAlign: TextAlign.center),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: historico.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final r = historico[i];
+                    final data =
+                        DateTime.parse(r['registrado_em'] as String);
+                    final altura = (r['altura_cm'] as num?)?.toDouble() ?? 0;
+                    final imc = (r['imc'] as num?)?.toDouble() ?? 0;
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.monitor_weight_outlined,
+                            color: AppTheme.primary, size: 20),
+                      ),
+                      title: Text(
+                        '${r['peso_kg']} kg${altura > 0 ? '  •  ${altura.toStringAsFixed(0)} cm' : ''}',
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        'IMC ${imc.toStringAsFixed(1)}  •  ${data.day}/${data.month}/${data.year}',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.textLight),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Fechar'))
+        ],
+      ),
+    );
+  }
+
 
   @override
   void dispose() {
@@ -52,6 +319,11 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       backgroundColor: AppTheme.surface,
       body: FadeTransition(
@@ -330,47 +602,50 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildWaterCard() {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('💧', style: TextStyle(fontSize: 22)),
-          const SizedBox(height: 10),
-          const Text(
-            'Água',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textMedium,
+    return GestureDetector(
+      onTap: _registrarAgua,
+      child: _Card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('💧', style: TextStyle(fontSize: 22)),
+            const SizedBox(height: 10),
+            const Text(
+              'Água',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textMedium,
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${(_waterProgress * 2000).toInt()} ml',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textDark,
-              letterSpacing: -0.5,
+            const SizedBox(height: 4),
+            Text(
+              '$_aguaMl ml',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textDark,
+                letterSpacing: -0.5,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: _waterProgress,
-              minHeight: 8,
-              backgroundColor: const Color(0xFFE3F2FD),
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: _waterProgress.clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: const Color(0xFFE3F2FD),
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${(_waterProgress * 100).toInt()}% da meta',
-            style: const TextStyle(fontSize: 11, color: AppTheme.textLight),
-          ),
-        ],
+            const SizedBox(height: 4),
+            Text(
+              '${(_waterProgress * 100).clamp(0, 100).toInt()}% · toque +250ml',
+              style: const TextStyle(fontSize: 11, color: AppTheme.textLight),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -422,14 +697,46 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildBiometricsCard() {
+    String _imcStatus(double imc) {
+      if (imc == 0) return 'Sem dado';
+      if (imc < 18.5) return 'Abaixo do peso';
+      if (imc < 25.0) return 'Normal';
+      if (imc < 30.0) return 'Sobrepeso';
+      return 'Obesidade';
+    }
+
+    Color _imcColor(double imc) {
+      if (imc == 0) return AppTheme.textLight;
+      if (imc < 18.5) return Colors.orange;
+      if (imc < 25.0) return AppTheme.primary;
+      if (imc < 30.0) return Colors.orange;
+      return Colors.red;
+    }
+
     return _Card(
       child: Column(
         children: [
-          _BiometricRow(label: 'IMC', value: _bmiValue.toStringAsFixed(1), unit: 'kg/m²', status: 'Normal', statusColor: AppTheme.primary),
+          if (_alturaCm > 0) ...[
+            _BiometricRow(
+              label: 'Altura',
+              value: _alturaCm.toStringAsFixed(0),
+              unit: 'cm',
+              status: 'Registrada',
+              statusColor: const Color(0xFF2196F3),
+            ),
+            const Divider(color: AppTheme.divider, height: 24),
+          ],
+          _BiometricRow(
+            label: 'IMC',
+            value: _bmiValue > 0 ? _bmiValue.toStringAsFixed(1) : '--',
+            unit: 'kg/m²',
+            status: _imcStatus(_bmiValue),
+            statusColor: _imcColor(_bmiValue),
+          ),
           const Divider(color: AppTheme.divider, height: 24),
-          const _BiometricRow(label: 'Gordura Corporal', value: '22.4', unit: '%', status: 'Ideal', statusColor: AppTheme.primaryLight),
+          _BiometricRow(label: 'Gordura Corporal', value: _gorduraCorporal > 0 ? _gorduraCorporal.toStringAsFixed(1) : '--', unit: '%', status: 'Ideal', statusColor: AppTheme.primaryLight),
           const Divider(color: AppTheme.divider, height: 24),
-          const _BiometricRow(label: 'Massa Muscular', value: '45.2', unit: 'kg', status: 'Boa', statusColor: Color(0xFF2196F3)),
+          _BiometricRow(label: 'Massa Muscular', value: _massaMuscular > 0 ? _massaMuscular.toStringAsFixed(1) : '--', unit: 'kg', status: 'Boa', statusColor: const Color(0xFF2196F3)),
         ],
       ),
     );
@@ -442,7 +749,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: _QuickActionButton(
             icon: Icons.add_circle_outline_rounded,
             label: 'Registrar\nRefeição',
-            onTap: () {},
+            onTap: () => Navigator.pushNamed(
+              context,
+              AppRoutes.refeicoes,
+              arguments: {'usuarioId': _usuarioId},
+            ).then((_) => _carregarDados()),
           ),
         ),
         const SizedBox(width: 12),
@@ -450,15 +761,19 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: _QuickActionButton(
             icon: Icons.monitor_weight_outlined,
             label: 'Registrar\nPeso',
-            onTap: () {},
+            onTap: _registrarPeso,
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: _QuickActionButton(
-            icon: Icons.history_rounded,
-            label: 'Ver\nHistórico',
-            onTap: () {},
+            icon: Icons.person_outline_rounded,
+            label: 'Meu\nPerfil',
+            onTap: () => Navigator.pushNamed(
+              context,
+              AppRoutes.perfil,
+              arguments: {'usuarioId': _usuarioId},
+            ).then((_) => _carregarDados()),
           ),
         ),
       ],
