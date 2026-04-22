@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/chat_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/refeicoes_dia_screen.dart';
+import 'screens/perfil_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +27,9 @@ class NutriPathApp extends StatelessWidget {
         AppRoutes.login: (_) => const LoginScreen(),
         AppRoutes.dashboard: (_) => const DashboardScreen(),
         AppRoutes.chat: (_) => const ChatScreen(),
+        AppRoutes.register: (_) => const RegisterScreen(),
+        AppRoutes.refeicoes: (_) => const RefeicoesDiaScreen(),
+        AppRoutes.perfil: (_) => const PerfilScreen(),
       },
     );
   }
@@ -34,6 +40,9 @@ class AppRoutes {
   static const String login = '/';
   static const String dashboard = '/dashboard';
   static const String chat = '/chat';
+  static const String register = '/register';
+  static const String refeicoes = '/refeicoes';
+  static const String perfil = '/perfil';
 }
 
 // ─── Tema Global ─────────────────────────────────────────────────────────────
