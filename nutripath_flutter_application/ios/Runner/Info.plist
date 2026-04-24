@@ -27,6 +27,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+  		<key>NSAllowsArbitraryLoads</key>
+  		<true/>
+	</dict>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>

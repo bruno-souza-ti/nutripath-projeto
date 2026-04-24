@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../main.dart';
-import '../database/nutri_repository.dart';
+import '../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -50,41 +50,44 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
-  Future<void> _handleCadastro() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
+Future<void> _handleCadastro() async {
+  if (!_formKey.currentState!.validate()) return;
+  setState(() => _isLoading = true);
 
-    try {
-      final repo = NutriRepository();
-      final id = await repo.cadastrarUsuario(
-        _nomeController.text.trim(),
-        _emailController.text.trim(),
-        _senhaController.text,
-      );
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Conta criada com sucesso! 🎉'),
-          backgroundColor: Color(0xFF2D6A4F),
-        ),
-      );
-      Navigator.pushReplacementNamed(
-        context,
-        AppRoutes.dashboard,
-        arguments: {'usuarioId': id, 'nome': _nomeController.text.trim()},
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('E-mail já cadastrado. Tente outro.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
+  final result = await AuthService.register(
+    _nomeController.text.trim(),
+    _emailController.text.trim(),
+    _senhaController.text,
+  );
+
+  if (!mounted) return;
+  setState(() => _isLoading = false);
+
+  if (result['sucesso'] == true) {
+    final usuario = result['usuario'];
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Conta criada com sucesso! 🎉'),
+        backgroundColor: Color(0xFF2D6A4F),
+      ),
+    );
+    Navigator.pushReplacementNamed(
+      context,
+      AppRoutes.dashboard,
+      arguments: {
+        'usuarioId': usuario['id'],
+        'nome': usuario['nome'],
+      },
+    );
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['erro'] ?? 'Erro ao criar conta.'),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {

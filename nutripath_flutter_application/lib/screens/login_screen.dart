@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../main.dart';
-import '../database/nutri_repository.dart';
+import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -51,35 +51,38 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
+Future<void> _handleLogin() async {
+  if (!_formKey.currentState!.validate()) return;
+  setState(() => _isLoading = true);
 
-    setState(() => _isLoading = true);
+  final result = await AuthService.login(
+    _emailController.text.trim(),
+    _passwordController.text,
+  );
 
-    final repo = NutriRepository();
-    final usuario = await repo.login(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
+  if (mounted) {
+    setState(() => _isLoading = false);
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-      if (usuario != null) {
-        Navigator.pushReplacementNamed(
-          context,
-          AppRoutes.dashboard,
-          arguments: {'usuarioId': usuario['id'], 'nome': usuario['nome']},
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('E-mail ou senha incorretos.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
+    if (result['sucesso'] == true) {
+      final usuario = result['usuario'];
+      Navigator.pushReplacementNamed(
+        context,
+        AppRoutes.dashboard,
+        arguments: {
+          'usuarioId': usuario['id'],
+          'nome': usuario['nome'],
+        },
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['erro'] ?? 'Erro ao fazer login.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
