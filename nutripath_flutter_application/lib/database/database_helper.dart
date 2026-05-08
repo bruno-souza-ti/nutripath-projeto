@@ -1,3 +1,5 @@
+// lib/database/database_helper.dart
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -19,23 +21,38 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3, // incrementado de 2 → 3
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // Cada bloco é cumulativo: se vier do v1, roda v1→v2 e depois v2→v3
     if (oldVersion < 2) {
       try {
         await db.execute(
             'ALTER TABLE usuarios ADD COLUMN objetivo TEXT NOT NULL DEFAULT ""');
       } catch (_) {}
     }
+    if (oldVersion < 3) {
+      // Adiciona tabela de logs do chat com a IA
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS interview_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          usuario_id INTEGER NOT NULL,
+          mensagem TEXT NOT NULL,
+          remetente TEXT NOT NULL,
+          criado_em TEXT NOT NULL,
+          sincronizado INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+        )
+      ''');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    // Tabela de usuários
+    // ── Usuários ──────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +64,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Tabela de biometria
+    // ── Biometria ─────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE biometria (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +79,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Tabela de refeições
+    // ── Refeições ─────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE refeicoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +95,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Tabela de consumo de água
+    // ── Água ──────────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE agua (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +106,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Tabela de metas diárias
+    // ── Metas ─────────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE metas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,81 +118,20 @@ class DatabaseHelper {
       )
     ''');
 
-    // Inserir usuário de teste
-    await db.insert('usuarios', {
-      'nome': 'Ana',
-      'email': 'ana@email.com',
-      'senha': '123456',
-      'criado_em': DateTime.now().toIso8601String(),
-    });
+    // ── Logs do chat com IA ───────────────────────────────────────────────────
+    // Campo "sincronizado": 0 = pendente, 1 = enviado ao servidor
+    await db.execute('''
+      CREATE TABLE interview_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario_id INTEGER NOT NULL,
+        mensagem TEXT NOT NULL,
+        remetente TEXT NOT NULL,
+        criado_em TEXT NOT NULL,
+        sincronizado INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+      )
+    ''');
 
-    // Inserir metas padrão para o usuário de teste
-    await db.insert('metas', {
-      'usuario_id': 1,
-      'meta_calorias': 2000,
-      'meta_agua_ml': 2000,
-      'meta_peso_kg': 62.0,
-    });
-
-    // Inserir biometria inicial
-    await db.insert('biometria', {
-      'usuario_id': 1,
-      'peso_kg': 65.4,
-      'altura_cm': 169.0,
-      'imc': 22.8,
-      'gordura_corporal': 22.4,
-      'massa_muscular': 45.2,
-      'registrado_em': DateTime.now().toIso8601String(),
-    });
-
-    // Inserir consumo de água de hoje
-    await db.insert('agua', {
-      'usuario_id': 1,
-      'quantidade_ml': 1200,
-      'registrado_em': DateTime.now().toIso8601String(),
-    });
-
-    // Inserir refeições de hoje
-    final hoje = DateTime.now().toIso8601String();
-    await db.insert('refeicoes', {
-      'usuario_id': 1,
-      'descricao': 'Café da manhã - Aveia com frutas',
-      'calorias': 350,
-      'proteinas': 10.0,
-      'carboidratos': 55.0,
-      'gorduras': 8.0,
-      'tipo': 'cafe_manha',
-      'registrado_em': hoje,
-    });
-    await db.insert('refeicoes', {
-      'usuario_id': 1,
-      'descricao': 'Almoço - Frango grelhado com salada',
-      'calorias': 520,
-      'proteinas': 38.0,
-      'carboidratos': 30.0,
-      'gorduras': 12.0,
-      'tipo': 'almoco',
-      'registrado_em': hoje,
-    });
-    await db.insert('refeicoes', {
-      'usuario_id': 1,
-      'descricao': 'Lanche - Iogurte com granola',
-      'calorias': 280,
-      'proteinas': 12.0,
-      'carboidratos': 40.0,
-      'gorduras': 6.0,
-      'tipo': 'lanche',
-      'registrado_em': hoje,
-    });
-    await db.insert('refeicoes', {
-      'usuario_id': 1,
-      'descricao': 'Jantar - Salmão com legumes',
-      'calorias': 310,
-      'proteinas': 30.0,
-      'carboidratos': 20.0,
-      'gorduras': 10.0,
-      'tipo': 'jantar',
-      'registrado_em': hoje,
-    });
+    // ── SEM seed data: usuários são criados apenas via cadastro ───────────────
   }
 }

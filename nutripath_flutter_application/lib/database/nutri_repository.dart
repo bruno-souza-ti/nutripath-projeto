@@ -1,3 +1,5 @@
+// lib/database/nutri_repository.dart
+
 import '../database/database_helper.dart';
 
 class NutriRepository {
@@ -23,7 +25,6 @@ class NutriRepository {
       'senha': senha,
       'criado_em': DateTime.now().toIso8601String(),
     });
-    // Criar metas padrão
     await db.insert('metas', {
       'usuario_id': id,
       'meta_calorias': 2000,
@@ -40,8 +41,7 @@ class NutriRepository {
       whereArgs: [usuarioId],
     );
     if (result.isEmpty) return {};
-    final u = Map<String, dynamic>.from(result.first);
-    return u;
+    return Map<String, dynamic>.from(result.first);
   }
 
   Future<void> atualizarPerfil({
@@ -59,64 +59,81 @@ class NutriRepository {
   }
 
   // ─── DASHBOARD ────────────────────────────────────────────────────────────
+  // Todas as queries dentro de uma transaction: dados consistentes do mesmo
+  // snapshot, sem risco de a água ser registrada entre duas queries distintas.
 
   Future<Map<String, dynamic>> getDashboard(int usuarioId) async {
     final db = await _db.database;
-    final hoje = DateTime.now();
-    final inicioDia = DateTime(hoje.year, hoje.month, hoje.day).toIso8601String();
-    final fimDia = DateTime(hoje.year, hoje.month, hoje.day, 23, 59, 59).toIso8601String();
 
-    // Calorias do dia
-    final caloriasResult = await db.rawQuery('''
-      SELECT COALESCE(SUM(calorias), 0) as total
-      FROM refeicoes
-      WHERE usuario_id = ? AND registrado_em BETWEEN ? AND ?
-    ''', [usuarioId, inicioDia, fimDia]);
-    final calorias = (caloriasResult.first['total'] as num?)?.toInt() ?? 0;
+    return await db.transaction((txn) async {
+      final hoje = DateTime.now();
+      final inicioDia =
+          DateTime(hoje.year, hoje.month, hoje.day).toIso8601String();
+      final fimDia = DateTime(hoje.year, hoje.month, hoje.day, 23, 59, 59)
+          .toIso8601String();
 
-    // Água do dia
-    final aguaResult = await db.rawQuery('''
-      SELECT COALESCE(SUM(quantidade_ml), 0) as total
-      FROM agua
-      WHERE usuario_id = ? AND registrado_em BETWEEN ? AND ?
-    ''', [usuarioId, inicioDia, fimDia]);
-    final agua = (aguaResult.first['total'] as num?)?.toInt() ?? 0;
+      final caloriasResult = await txn.rawQuery('''
+        SELECT COALESCE(SUM(calorias), 0) as total
+        FROM refeicoes
+        WHERE usuario_id = ? AND registrado_em BETWEEN ? AND ?
+      ''', [usuarioId, inicioDia, fimDia]);
 
-    // Biometria mais recente
-    final biometria = await db.query(
-      'biometria',
-      where: 'usuario_id = ?',
-      whereArgs: [usuarioId],
-      orderBy: 'registrado_em DESC',
-      limit: 1,
-    );
+      final aguaResult = await txn.rawQuery('''
+        SELECT COALESCE(SUM(quantidade_ml), 0) as total
+        FROM agua
+        WHERE usuario_id = ? AND registrado_em BETWEEN ? AND ?
+      ''', [usuarioId, inicioDia, fimDia]);
 
-    // Metas
-    final metas = await db.query(
-      'metas',
-      where: 'usuario_id = ?',
-      whereArgs: [usuarioId],
-    );
+      final biometria = await txn.query(
+        'biometria',
+        where: 'usuario_id = ?',
+        whereArgs: [usuarioId],
+        orderBy: 'registrado_em DESC',
+        limit: 1,
+      );
 
-    // Nome do usuário
-    final usuario = await db.query(
-      'usuarios',
-      where: 'id = ?',
-      whereArgs: [usuarioId],
-    );
+      final metas = await txn.query(
+        'metas',
+        where: 'usuario_id = ?',
+        whereArgs: [usuarioId],
+      );
 
-    return {
-      'nome': usuario.isNotEmpty ? usuario.first['nome'] : 'Usuário',
-      'calorias_consumidas': calorias,
-      'meta_calorias': metas.isNotEmpty ? metas.first['meta_calorias'] : 2000,
-      'agua_ml': agua,
-      'meta_agua_ml': metas.isNotEmpty ? metas.first['meta_agua_ml'] : 2000,
-      'peso_kg': biometria.isNotEmpty ? biometria.first['peso_kg'] : 0.0,
-      'altura_cm': biometria.isNotEmpty ? biometria.first['altura_cm'] : 0.0,
-      'imc': biometria.isNotEmpty ? biometria.first['imc'] : 0.0,
-      'gordura_corporal': biometria.isNotEmpty ? biometria.first['gordura_corporal'] : 0.0,
-      'massa_muscular': biometria.isNotEmpty ? biometria.first['massa_muscular'] : 0.0,
-    };
+      final usuario = await txn.query(
+        'usuarios',
+        where: 'id = ?',
+        whereArgs: [usuarioId],
+      );
+
+      return {
+        'nome': usuario.isNotEmpty ? usuario.first['nome'] : 'Usuário',
+        'calorias_consumidas':
+            (caloriasResult.first['total'] as num?)?.toInt() ?? 0,
+        'meta_calorias':
+            metas.isNotEmpty ? metas.first['meta_calorias'] : 2000,
+        'agua_ml': (aguaResult.first['total'] as num?)?.toInt() ?? 0,
+        'meta_agua_ml':
+            metas.isNotEmpty ? metas.first['meta_agua_ml'] : 2000,
+        'peso_kg':
+            (biometria.isNotEmpty ? biometria.first['peso_kg'] : 0.0)
+                as double? ??
+            0.0,
+        'altura_cm':
+            (biometria.isNotEmpty ? biometria.first['altura_cm'] : 0.0)
+                as double? ??
+            0.0,
+        'imc': (biometria.isNotEmpty ? biometria.first['imc'] : 0.0)
+                as double? ??
+            0.0,
+        'gordura_corporal': (biometria.isNotEmpty
+                ? biometria.first['gordura_corporal']
+                : 0.0) as double? ??
+            0.0,
+        'massa_muscular': (biometria.isNotEmpty
+                ? biometria.first['massa_muscular']
+                : 0.0) as double? ??
+            0.0,
+      };
+    });
   }
 
   // ─── REFEIÇÕES ────────────────────────────────────────────────────────────
@@ -143,10 +160,12 @@ class NutriRepository {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getRefeicoesDe(int usuarioId, DateTime data) async {
+  Future<List<Map<String, dynamic>>> getRefeicoesDe(
+      int usuarioId, DateTime data) async {
     final db = await _db.database;
     final inicio = DateTime(data.year, data.month, data.day).toIso8601String();
-    final fim = DateTime(data.year, data.month, data.day, 23, 59, 59).toIso8601String();
+    final fim =
+        DateTime(data.year, data.month, data.day, 23, 59, 59).toIso8601String();
     return await db.query(
       'refeicoes',
       where: 'usuario_id = ? AND registrado_em BETWEEN ? AND ?',
@@ -245,6 +264,72 @@ class NutriRepository {
     if (metaCalorias != null) updates['meta_calorias'] = metaCalorias;
     if (metaAguaMl != null) updates['meta_agua_ml'] = metaAguaMl;
     if (metaPesoKg != null) updates['meta_peso_kg'] = metaPesoKg;
-    await db.update('metas', updates, where: 'usuario_id = ?', whereArgs: [usuarioId]);
+    await db.update('metas', updates,
+        where: 'usuario_id = ?', whereArgs: [usuarioId]);
+  }
+
+  // ─── INTERVIEW LOGS (Chat com IA) ─────────────────────────────────────────
+
+  /// Salva uma mensagem do chat localmente.
+  /// [remetente]: 'user' ou 'ai'
+  Future<int> salvarMensagemChat({
+    required int usuarioId,
+    required String mensagem,
+    required String remetente,
+  }) async {
+    final db = await _db.database;
+    return await db.insert('interview_logs', {
+      'usuario_id': usuarioId,
+      'mensagem': mensagem,
+      'remetente': remetente,
+      'criado_em': DateTime.now().toIso8601String(),
+      'sincronizado': 0,
+    });
+  }
+
+  /// Retorna o histórico de mensagens de um usuário, do mais antigo ao mais recente.
+  Future<List<Map<String, dynamic>>> getHistoricoChat(int usuarioId) async {
+    final db = await _db.database;
+    return await db.query(
+      'interview_logs',
+      where: 'usuario_id = ?',
+      whereArgs: [usuarioId],
+      orderBy: 'criado_em ASC',
+    );
+  }
+
+  /// Retorna apenas mensagens ainda não sincronizadas com o servidor.
+  /// Usado pelo SyncService (Passo do roadmap 09/05).
+  Future<List<Map<String, dynamic>>> getMensagensPendentes(
+      int usuarioId) async {
+    final db = await _db.database;
+    return await db.query(
+      'interview_logs',
+      where: 'usuario_id = ? AND sincronizado = 0',
+      whereArgs: [usuarioId],
+      orderBy: 'criado_em ASC',
+    );
+  }
+
+  /// Marca uma lista de IDs como sincronizados após envio bem-sucedido ao servidor.
+  Future<void> marcarMensagensComoSincronizadas(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await _db.database;
+    final placeholders = ids.map((_) => '?').join(', ');
+    await db.rawUpdate(
+      'UPDATE interview_logs SET sincronizado = 1 WHERE id IN ($placeholders)',
+      ids,
+    );
+  }
+
+  /// Apaga todo o histórico de chat de um usuário.
+  /// Útil para o botão "Limpar conversa" que vamos adicionar na UI.
+  Future<void> limparHistoricoChat(int usuarioId) async {
+    final db = await _db.database;
+    await db.delete(
+      'interview_logs',
+      where: 'usuario_id = ?',
+      whereArgs: [usuarioId],
+    );
   }
 }
