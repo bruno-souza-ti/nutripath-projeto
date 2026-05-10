@@ -1,5 +1,13 @@
+// lib/screens/chat_screen.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
 import '../../main.dart';
+import '../services/auth_service.dart';
 
 // ─── Modelo de Mensagem ───────────────────────────────────────────────────────
 class ChatMessage {
@@ -27,7 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isTyping = false;
 
-  // Mensagens iniciais (simulação – substituir por integração real com IA)
+  // Mensagem de boas-vindas inicial
   final List<ChatMessage> _messages = [
     ChatMessage(
       text:
@@ -36,17 +44,6 @@ class _ChatScreenState extends State<ChatScreen> {
       timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
     ),
   ];
-
-  // Respostas automáticas simuladas (substituir por chamada real à API de IA)
-  final List<String> _autoReplies = [
-    'Ótima pergunta! Com base no seu perfil, recomendo aumentar a ingestão de proteínas magras como frango, peixe e ovos. Isso ajudará a manter sua massa muscular enquanto você reduz a gordura corporal. 💪',
-    'Entendi! Para o café da manhã, uma boa opção seria: 2 ovos mexidos + 1 fatia de pão integral + 1 fruta. Isso te dará em torno de **320 kcal** com um bom equilíbrio de macros.',
-    'Sua hidratação está um pouco abaixo do ideal. Tente beber pelo menos **2 litros de água** por dia. Dica: mantenha uma garrafa sempre por perto! 💧',
-    'Analisando seu histórico, você está progredindo muito bem! Continue com a rotina atual e tente adicionar um lanche saudável à tarde, como iogurte grego com granola. 🥣',
-    'Para melhorar seu IMC, foque em uma dieta balanceada com déficit calórico moderado (cerca de 300-500 kcal/dia) e pratique exercícios regulares. Posso criar um plano detalhado para você!',
-  ];
-
-  int _replyIndex = 0;
 
   @override
   void dispose() {
@@ -69,7 +66,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isTyping) return;
 
     _inputController.clear();
 
@@ -83,21 +80,60 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom();
 
-    // Simula tempo de resposta da IA (substituir por chamada real)
-    await Future.delayed(const Duration(milliseconds: 1500));
+    try {
+      final headers = await AuthService.getAuthHeaders();
 
-    if (mounted) {
-      setState(() {
-        _isTyping = false;
-        _messages.add(ChatMessage(
-          text: _autoReplies[_replyIndex % _autoReplies.length],
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-        _replyIndex++;
-      });
-      _scrollToBottom();
+      final response = await http
+          .post(
+            Uri.parse('${AuthService.iaBaseUrl}/ai/chat'),
+            headers: headers,
+            body: jsonEncode({'prompt': text}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        final aiText = data['response'] ??
+            data['resposta'] ??
+            data['message'] ??
+            data['content'] ??
+            'Não consegui processar sua mensagem.';
+
+        setState(() {
+          _isTyping = false;
+          _messages.add(ChatMessage(
+            text: aiText.toString(),
+            isUser: false,
+            timestamp: DateTime.now(),
+          ));
+        });
+      } else {
+        _onApiError('O servidor retornou um erro (${response.statusCode}).');
+      }
+    } on SocketException {
+      _onApiError('Sem conexão com a internet. Verifique sua rede.');
+    } on TimeoutException {
+      _onApiError('O servidor demorou muito para responder. Tente novamente.');
+    } catch (_) {
+      _onApiError('Erro inesperado ao contatar a IA. Tente novamente.');
     }
+
+    _scrollToBottom();
+  }
+
+  void _onApiError(String motivo) {
+    if (!mounted) return;
+    setState(() => _isTyping = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(motivo),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -193,8 +229,7 @@ class _ChatScreenState extends State<ChatScreen> {
       itemBuilder: (context, index) {
         final message = _messages[index];
         final showDate = index == 0 ||
-            !_isSameDay(
-                _messages[index - 1].timestamp, message.timestamp);
+            !_isSameDay(_messages[index - 1].timestamp, message.timestamp);
         return Column(
           children: [
             if (showDate) _buildDateLabel(message.timestamp),
@@ -239,8 +274,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.eco_rounded,
-                  color: Colors.white, size: 16),
+              child:
+                  const Icon(Icons.eco_rounded, color: Colors.white, size: 16),
             ),
             const SizedBox(width: 8),
           ],
@@ -254,14 +289,15 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: message.isUser
-                        ? AppTheme.primary
-                        : AppTheme.cardBg,
+                    color:
+                        message.isUser ? AppTheme.primary : AppTheme.cardBg,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(18),
                       topRight: const Radius.circular(18),
-                      bottomLeft: Radius.circular(message.isUser ? 18 : 4),
-                      bottomRight: Radius.circular(message.isUser ? 4 : 18),
+                      bottomLeft:
+                          Radius.circular(message.isUser ? 18 : 4),
+                      bottomRight:
+                          Radius.circular(message.isUser ? 4 : 18),
                     ),
                     border: message.isUser
                         ? null
@@ -305,7 +341,6 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Renderiza texto com suporte básico a negrito (**texto**)
   Widget _buildMessageText(ChatMessage message) {
     final spans = <TextSpan>[];
     final parts = message.text.split('**');
@@ -337,12 +372,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.eco_rounded,
-                color: Colors.white, size: 16),
+            child:
+                const Icon(Icons.eco_rounded, color: Colors.white, size: 16),
           ),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: AppTheme.cardBg,
               borderRadius: const BorderRadius.only(
@@ -381,7 +417,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: Row(
         children: [
-          // Botão de sugestões rápidas
           IconButton(
             onPressed: _showQuickSuggestions,
             icon: const Icon(Icons.add_circle_outline_rounded,
@@ -402,8 +437,8 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               decoration: InputDecoration(
                 hintText: 'Pergunte sobre nutrição...',
-                hintStyle: const TextStyle(
-                    color: AppTheme.textLight, fontSize: 15),
+                hintStyle:
+                    const TextStyle(color: AppTheme.textLight, fontSize: 15),
                 filled: true,
                 fillColor: AppTheme.surface,
                 contentPadding: const EdgeInsets.symmetric(
@@ -418,8 +453,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
-                  borderSide:
-                      const BorderSide(color: AppTheme.primary, width: 1.5),
+                  borderSide: const BorderSide(
+                      color: AppTheme.primary, width: 1.5),
                 ),
               ),
             ),
@@ -478,7 +513,7 @@ class _ChatScreenState extends State<ChatScreen> {
       '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 }
 
-// ─── Componentes Auxiliares ────────────────────────────────────────────────────
+// ─── Componentes Auxiliares ───────────────────────────────────────────────────
 
 class _OnlineDot extends StatelessWidget {
   const _OnlineDot();
@@ -610,7 +645,8 @@ class _QuickSuggestionsSheet extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           ..._suggestions.map((s) => ListTile(
-                leading: Text(s['icon']!, style: const TextStyle(fontSize: 22)),
+                leading:
+                    Text(s['icon']!, style: const TextStyle(fontSize: 22)),
                 title: Text(
                   s['text']!,
                   style: const TextStyle(

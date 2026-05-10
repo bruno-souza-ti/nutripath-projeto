@@ -1,3 +1,4 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import '../../main.dart';
 import '../services/auth_service.dart';
@@ -11,7 +12,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _emailController = TextEditingController();
+  // Campo "username" — a API do professor usa username, não e-mail
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
@@ -46,43 +48,43 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     _animController.dispose();
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-Future<void> _handleLogin() async {
-  if (!_formKey.currentState!.validate()) return;
-  setState(() => _isLoading = true);
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
 
-  final result = await AuthService.login(
-    _emailController.text.trim(),
-    _passwordController.text,
-  );
+    final result = await AuthService.login(
+      _usernameController.text.trim(),
+      _passwordController.text,
+    );
 
-  if (mounted) {
-    setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() => _isLoading = false);
 
-    if (result['sucesso'] == true) {
-      final usuario = result['usuario'];
-      Navigator.pushReplacementNamed(
-        context,
-        AppRoutes.dashboard,
-        arguments: {
-          'usuarioId': usuario['id'],
-          'nome': usuario['nome'],
-        },
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['erro'] ?? 'Erro ao fazer login.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      if (result['sucesso'] == true) {
+        final usuario = result['usuario'];
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.dashboard,
+          arguments: {
+            'usuarioId': usuario['id'],
+            'nome': usuario['nome'] ?? usuario['name'] ?? '',
+          },
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['erro'] ?? 'Erro ao fazer login.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -111,8 +113,6 @@ Future<void> _handleLogin() async {
                     _buildHeader(),
                     const SizedBox(height: 36),
                     _buildForm(),
-                    const SizedBox(height: 12),
-                    _buildForgotPassword(),
                     const SizedBox(height: 28),
                     _buildLoginButton(),
                     const SizedBox(height: 32),
@@ -213,19 +213,20 @@ Future<void> _handleLogin() async {
       key: _formKey,
       child: Column(
         children: [
+          // Username (login) — campo que a API do professor usa
           TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
+            controller: _usernameController,
+            keyboardType: TextInputType.text,
             textInputAction: TextInputAction.next,
+            autocorrect: false,
             decoration: const InputDecoration(
-              labelText: 'E-mail',
-              hintText: 'seu@email.com',
-              prefixIcon: Icon(Icons.mail_outline_rounded,
+              labelText: 'Username (login)',
+              hintText: 'seu_usuario',
+              prefixIcon: Icon(Icons.person_outline_rounded,
                   color: AppTheme.textLight, size: 20),
             ),
             validator: (v) {
-              if (v == null || v.isEmpty) return 'Informe o e-mail';
-              if (!v.contains('@')) return 'E-mail inválido';
+              if (v == null || v.trim().isEmpty) return 'Informe o username';
               return null;
             },
           ),
@@ -259,25 +260,6 @@ Future<void> _handleLogin() async {
             },
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildForgotPassword() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: TextButton(
-        onPressed: () {},
-        style: TextButton.styleFrom(
-          foregroundColor: AppTheme.primary,
-          padding: EdgeInsets.zero,
-          minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        child: const Text(
-          'Esqueceu a senha?',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-        ),
       ),
     );
   }

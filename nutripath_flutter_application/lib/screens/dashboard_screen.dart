@@ -51,7 +51,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     super.didChangeDependencies();
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
     if (args != null) {
-      _usuarioId = args['usuarioId'] ?? 1;
+      _usuarioId = int.tryParse(args['usuarioId']?.toString() ?? '') ?? 1;
     }
     _carregarDados();
   }
