@@ -46,7 +46,7 @@ O **NutriPath AI** é um aplicativo mobile desenvolvido em Flutter para iOS que 
 | 18/04 | SQLite | Criar as tabelas `User`, `Measurements` e `InterviewLogs` | ✅ |
 | 25/04 | API & JWT | **Consumo de API e Autenticação JWT + Checkpoint 1** | ✅ |
 | 02/05 | Integração IA | Integrar o endpoint fornecido pelo professor para processar a entrevista | ✅ |
-| 09/05 | Sync & Background | Implementar a lógica de "Forçar Sincronismo" dos dados da entrevista | ⬜ |
+| 09/05 | Sync & Background | Implementar a lógica de "Forçar Sincronismo" dos dados da entrevista | ✅ |
 | 16/05 | Arquivos Locais | Armazenar logs de exportação da dieta em formato local (ex: JSON/PDF) | ⬜ |
 | 23/05 | Hardware & Fotos | **Hardware: Câmera e Galeria no iOS + Checkpoint 2** | ⬜ |
 | 23/05 | P2/Entrega | Polimento final e documentação conforme exigido pelo cliente | ⬜ |
