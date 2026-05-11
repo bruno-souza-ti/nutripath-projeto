@@ -16,6 +16,7 @@ class AuthService {
 
   static const String _tokenKey = 'jwt_token';
   static const String _userKey = 'user_data';
+  static const String _localUserIdKey = 'local_usuario_id'; // <-- novo
 
   static Future<Map<String, dynamic>> login(
       String username, String password) async {
@@ -141,6 +142,24 @@ class AuthService {
     await _saveUser(user);
   }
 
+  // ── ID local (SQLite) ──────────────────────────────────────────────────────
+
+  /// Salva o ID do usuário na tabela local (SQLite).
+  static Future<void> saveLocalUsuarioId(int id) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_localUserIdKey, id);
+  }
+
+  /// Retorna o ID local do usuário logado, ou null se não houver sessão.
+  static Future<int?> getLocalUsuarioId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey(_localUserIdKey)
+        ? prefs.getInt(_localUserIdKey)
+        : null;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_tokenKey);
@@ -170,6 +189,7 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_userKey);
+    await prefs.remove(_localUserIdKey); // <-- limpa o ID local
   }
 
   static Future<bool> isLoggedIn() async {

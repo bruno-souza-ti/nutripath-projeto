@@ -1,6 +1,7 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import '../../main.dart';
+import '../database/nutri_repository.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -12,7 +13,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  // Campo "username" — a API do professor usa username, não e-mail
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -66,15 +66,33 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() => _isLoading = false);
 
       if (result['sucesso'] == true) {
-        final usuario = result['usuario'];
-        Navigator.pushReplacementNamed(
-          context,
-          AppRoutes.dashboard,
-          arguments: {
-            'usuarioId': usuario['id'],
-            'nome': usuario['nome'] ?? usuario['name'] ?? '',
-          },
+        final usuario = result['usuario'] as Map<String, dynamic>;
+
+        // Resolve o email do usuário retornado pela API
+        final email = (usuario['email'] as String? ?? '').trim();
+        final nome = (usuario['nome'] ?? usuario['name'] ?? 'Usuário') as String;
+
+        // Garante que existe um registro local para este usuário e
+        // obtém o ID correto no banco SQLite — isolando os dados por conta.
+        final repo = NutriRepository();
+        final localId = await repo.getOuCriarUsuarioLocal(
+          email: email.isNotEmpty ? email : 'user_${usuario['id']}@local',
+          nome: nome,
         );
+
+        // Persiste o ID local na sessão para uso em toda a app
+        await AuthService.saveLocalUsuarioId(localId);
+
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            AppRoutes.dashboard,
+            arguments: {
+              'usuarioId': localId,
+              'nome': nome,
+            },
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -213,7 +231,6 @@ class _LoginScreenState extends State<LoginScreen>
       key: _formKey,
       child: Column(
         children: [
-          // Username (login) — campo que a API do professor usa
           TextFormField(
             controller: _usernameController,
             keyboardType: TextInputType.text,

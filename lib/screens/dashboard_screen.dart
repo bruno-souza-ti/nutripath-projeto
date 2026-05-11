@@ -58,31 +58,29 @@ class _DashboardScreenState extends State<DashboardScreen>
     _carregarDados();
   }
 
-Future<void> _carregarDados() async {
-  setState(() => _isLoading = true);
+  Future<void> _carregarDados() async {
+    setState(() => _isLoading = true);
 
-  // Busca nome real do usuário logado via AuthService
-  final userAuth = await AuthService.getUser();
-  final nomeAuth = userAuth?['nome'] ?? userAuth?['name'] ?? '';
+    final userAuth = await AuthService.getUser();
+    final nomeAuth = userAuth?['nome'] ?? userAuth?['name'] ?? '';
 
-  final dados = await _repo.getDashboard(_usuarioId);
-  setState(() {
-    _userName = nomeAuth.isNotEmpty ? nomeAuth : (dados['nome'] ?? 'Usuário');
-    _consumedCalories = dados['calorias_consumidas'] ?? 0;
-    _goalCalories = dados['meta_calorias'] ?? 2000;
-    _aguaMl = dados['agua_ml'] ?? 0;
-    _goalAguaMl = dados['meta_agua_ml'] ?? 2000;
-    _weightKg = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
-    _alturaCm = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
-    _bmiValue = (dados['imc'] as num?)?.toDouble() ?? 0;
-    _gorduraCorporal = (dados['gordura_corporal'] as num?)?.toDouble() ?? 0;
-    _massaMuscular = (dados['massa_muscular'] as num?)?.toDouble() ?? 0;
-    _calorieProgress = _goalCalories > 0 ? _consumedCalories / _goalCalories : 0;
-    _waterProgress = _goalAguaMl > 0 ? _aguaMl / _goalAguaMl : 0;
-    _isLoading = false;
-  });
-}
-
+    final dados = await _repo.getDashboard(_usuarioId);
+    setState(() {
+      _userName = nomeAuth.isNotEmpty ? nomeAuth : (dados['nome'] ?? 'Usuário');
+      _consumedCalories = dados['calorias_consumidas'] ?? 0;
+      _goalCalories = dados['meta_calorias'] ?? 2000;
+      _aguaMl = dados['agua_ml'] ?? 0;
+      _goalAguaMl = dados['meta_agua_ml'] ?? 2000;
+      _weightKg = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
+      _alturaCm = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
+      _bmiValue = (dados['imc'] as num?)?.toDouble() ?? 0;
+      _gorduraCorporal = (dados['gordura_corporal'] as num?)?.toDouble() ?? 0;
+      _massaMuscular = (dados['massa_muscular'] as num?)?.toDouble() ?? 0;
+      _calorieProgress = _goalCalories > 0 ? _consumedCalories / _goalCalories : 0;
+      _waterProgress = _goalAguaMl > 0 ? _aguaMl / _goalAguaMl : 0;
+      _isLoading = false;
+    });
+  }
 
   Future<void> _registrarAgua() async {
     await _repo.registrarAgua(_usuarioId, 250);
@@ -311,8 +309,11 @@ Future<void> _carregarDados() async {
     Navigator.pushNamed(context, AppRoutes.chat);
   }
 
-  void _handleLogout() {
-    Navigator.pushReplacementNamed(context, AppRoutes.login);
+  void _handleLogout() async {
+    await AuthService.logout(); // limpa token, user_data e local_usuario_id
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, AppRoutes.login);
+    }
   }
 
   @override

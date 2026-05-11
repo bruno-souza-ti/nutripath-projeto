@@ -33,6 +33,54 @@ class NutriRepository {
     return id;
   }
 
+  /// Retorna o ID local (SQLite) do usuário identificado pelo e-mail.
+  /// Se não existir, cria o registro com nome e e-mail fornecidos.
+  /// Use após login bem-sucedido na API remota para garantir isolamento de dados.
+  Future<int> getOuCriarUsuarioLocal({
+    required String email,
+    required String nome,
+  }) async {
+    final db = await _db.database;
+
+    // Tenta encontrar pelo e-mail
+    final existing = await db.query(
+      'usuarios',
+      columns: ['id'],
+      where: 'email = ?',
+      whereArgs: [email],
+    );
+
+    if (existing.isNotEmpty) {
+      final id = existing.first['id'] as int;
+      // Atualiza o nome caso tenha mudado
+      await db.update(
+        'usuarios',
+        {'nome': nome},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return id;
+    }
+
+    // Cria novo registro local (sem senha — autenticação é via API)
+    final id = await db.insert('usuarios', {
+      'nome': nome,
+      'email': email,
+      'senha': '',
+      'objetivo': '',
+      'criado_em': DateTime.now().toIso8601String(),
+    });
+
+    // Cria metas padrão para o novo usuário
+    await db.insert('metas', {
+      'usuario_id': id,
+      'meta_calorias': 2000,
+      'meta_agua_ml': 2000,
+    });
+
+    return id;
+  }
+
   Future<Map<String, dynamic>> getPerfil(int usuarioId) async {
     final db = await _db.database;
     final result = await db.query(
@@ -59,8 +107,6 @@ class NutriRepository {
   }
 
   // ─── DASHBOARD ────────────────────────────────────────────────────────────
-  // Todas as queries dentro de uma transaction: dados consistentes do mesmo
-  // snapshot, sem risco de a água ser registrada entre duas queries distintas.
 
   Future<Map<String, dynamic>> getDashboard(int usuarioId) async {
     final db = await _db.database;
@@ -270,8 +316,6 @@ class NutriRepository {
 
   // ─── INTERVIEW LOGS (Chat com IA) ─────────────────────────────────────────
 
-  /// Salva uma mensagem do chat localmente.
-  /// [remetente]: 'user' ou 'ai'
   Future<int> salvarMensagemChat({
     required int usuarioId,
     required String mensagem,
@@ -287,7 +331,6 @@ class NutriRepository {
     });
   }
 
-  /// Retorna o histórico de mensagens de um usuário, do mais antigo ao mais recente.
   Future<List<Map<String, dynamic>>> getHistoricoChat(int usuarioId) async {
     final db = await _db.database;
     return await db.query(
@@ -298,8 +341,6 @@ class NutriRepository {
     );
   }
 
-  /// Retorna apenas mensagens ainda não sincronizadas com o servidor.
-  /// Usado pelo SyncService (Passo do roadmap 09/05).
   Future<List<Map<String, dynamic>>> getMensagensPendentes(
       int usuarioId) async {
     final db = await _db.database;
@@ -311,7 +352,6 @@ class NutriRepository {
     );
   }
 
-  /// Marca uma lista de IDs como sincronizados após envio bem-sucedido ao servidor.
   Future<void> marcarMensagensComoSincronizadas(List<int> ids) async {
     if (ids.isEmpty) return;
     final db = await _db.database;
@@ -322,8 +362,6 @@ class NutriRepository {
     );
   }
 
-  /// Apaga todo o histórico de chat de um usuário.
-  /// Útil para o botão "Limpar conversa" que vamos adicionar na UI.
   Future<void> limparHistoricoChat(int usuarioId) async {
     final db = await _db.database;
     await db.delete(
