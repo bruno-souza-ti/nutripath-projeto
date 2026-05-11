@@ -1,6 +1,9 @@
+// lib/screens/dashboard_screen.dart
+
 import 'package:flutter/material.dart';
 import '../../main.dart';
 import '../database/nutri_repository.dart';
+import '../services/auth_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,7 +20,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   final _repo = NutriRepository();
   int _usuarioId = 1;
 
-  // Dados do SQLite
   String _userName = '';
   double _waterProgress = 0;
   double _calorieProgress = 0;
@@ -56,25 +58,31 @@ class _DashboardScreenState extends State<DashboardScreen>
     _carregarDados();
   }
 
-  Future<void> _carregarDados() async {
-    setState(() => _isLoading = true);
-    final dados = await _repo.getDashboard(_usuarioId);
-    setState(() {
-      _userName = dados['nome'] ?? 'Usuário';
-      _consumedCalories = dados['calorias_consumidas'] ?? 0;
-      _goalCalories = dados['meta_calorias'] ?? 2000;
-      _aguaMl = dados['agua_ml'] ?? 0;
-      _goalAguaMl = dados['meta_agua_ml'] ?? 2000;
-      _weightKg = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
-      _alturaCm = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
-      _bmiValue = (dados['imc'] as num?)?.toDouble() ?? 0;
-      _gorduraCorporal = (dados['gordura_corporal'] as num?)?.toDouble() ?? 0;
-      _massaMuscular = (dados['massa_muscular'] as num?)?.toDouble() ?? 0;
-      _calorieProgress = _goalCalories > 0 ? _consumedCalories / _goalCalories : 0;
-      _waterProgress = _goalAguaMl > 0 ? _aguaMl / _goalAguaMl : 0;
-      _isLoading = false;
-    });
-  }
+Future<void> _carregarDados() async {
+  setState(() => _isLoading = true);
+
+  // Busca nome real do usuário logado via AuthService
+  final userAuth = await AuthService.getUser();
+  final nomeAuth = userAuth?['nome'] ?? userAuth?['name'] ?? '';
+
+  final dados = await _repo.getDashboard(_usuarioId);
+  setState(() {
+    _userName = nomeAuth.isNotEmpty ? nomeAuth : (dados['nome'] ?? 'Usuário');
+    _consumedCalories = dados['calorias_consumidas'] ?? 0;
+    _goalCalories = dados['meta_calorias'] ?? 2000;
+    _aguaMl = dados['agua_ml'] ?? 0;
+    _goalAguaMl = dados['meta_agua_ml'] ?? 2000;
+    _weightKg = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
+    _alturaCm = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
+    _bmiValue = (dados['imc'] as num?)?.toDouble() ?? 0;
+    _gorduraCorporal = (dados['gordura_corporal'] as num?)?.toDouble() ?? 0;
+    _massaMuscular = (dados['massa_muscular'] as num?)?.toDouble() ?? 0;
+    _calorieProgress = _goalCalories > 0 ? _consumedCalories / _goalCalories : 0;
+    _waterProgress = _goalAguaMl > 0 ? _aguaMl / _goalAguaMl : 0;
+    _isLoading = false;
+  });
+}
+
 
   Future<void> _registrarAgua() async {
     await _repo.registrarAgua(_usuarioId, 250);
@@ -141,7 +149,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     final pesoController = TextEditingController();
     final alturaController = TextEditingController();
 
-    // Pré-preenche a altura com o valor mais recente, se houver
     if (_alturaCm > 0) {
       alturaController.text = _alturaCm.toStringAsFixed(0);
     }
@@ -211,8 +218,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   final imc = peso / ((altura / 100) * (altura / 100));
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(
-                          '✅ Peso registrado! IMC: ${imc.toStringAsFixed(1)}'),
+                      content: Text('✅ Peso registrado! IMC: ${imc.toStringAsFixed(1)}'),
                       backgroundColor: AppTheme.primary,
                     ),
                   );
@@ -253,18 +259,15 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: historico.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('Nenhum registro ainda.',
-                      textAlign: TextAlign.center),
+                  child: Text('Nenhum registro ainda.', textAlign: TextAlign.center),
                 )
               : ListView.separated(
                   shrinkWrap: true,
                   itemCount: historico.length,
-                  separatorBuilder: (_, __) =>
-                      const Divider(height: 1),
+                  separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final r = historico[i];
-                    final data =
-                        DateTime.parse(r['registrado_em'] as String);
+                    final data = DateTime.parse(r['registrado_em'] as String);
                     final altura = (r['altura_cm'] as num?)?.toDouble() ?? 0;
                     final imc = (r['imc'] as num?)?.toDouble() ?? 0;
                     return ListTile(
@@ -281,27 +284,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                       title: Text(
                         '${r['peso_kg']} kg${altura > 0 ? '  •  ${altura.toStringAsFixed(0)} cm' : ''}',
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                       ),
                       subtitle: Text(
                         'IMC ${imc.toStringAsFixed(1)}  •  ${data.day}/${data.month}/${data.year}',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppTheme.textLight),
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textLight),
                       ),
                     );
                   },
                 ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Fechar'))
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar'))
         ],
       ),
     );
   }
-
 
   @override
   void dispose() {
@@ -410,8 +408,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         ),
         IconButton(
           onPressed: _handleLogout,
-          icon: const Icon(Icons.logout_rounded,
-              color: AppTheme.textDark, size: 22),
+          icon: const Icon(Icons.logout_rounded, color: AppTheme.textDark, size: 22),
         ),
         const SizedBox(width: 8),
       ],
@@ -474,8 +471,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(20),
@@ -503,8 +499,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                   const SizedBox(height: 12),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
@@ -587,8 +582,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               value: _calorieProgress,
               minHeight: 10,
               backgroundColor: AppTheme.accent,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(Color(0xFFF6A623)),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFF6A623)),
             ),
           ),
           const SizedBox(height: 8),
@@ -612,11 +606,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             const SizedBox(height: 10),
             const Text(
               'Água',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textMedium,
-              ),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textMedium),
             ),
             const SizedBox(height: 4),
             Text(
@@ -635,8 +625,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 value: _waterProgress.clamp(0.0, 1.0),
                 minHeight: 8,
                 backgroundColor: const Color(0xFFE3F2FD),
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
+                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
               ),
             ),
             const SizedBox(height: 4),
@@ -659,11 +648,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 10),
           const Text(
             'Peso',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textMedium,
-            ),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textMedium),
           ),
           const SizedBox(height: 4),
           Text(
@@ -684,11 +669,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             child: const Text(
               '↓ 0.3 kg esta semana',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.primary,
-              ),
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.primary),
             ),
           ),
         ],
@@ -697,7 +678,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildBiometricsCard() {
-    String _imcStatus(double imc) {
+    String imcStatus(double imc) {
       if (imc == 0) return 'Sem dado';
       if (imc < 18.5) return 'Abaixo do peso';
       if (imc < 25.0) return 'Normal';
@@ -705,7 +686,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       return 'Obesidade';
     }
 
-    Color _imcColor(double imc) {
+    Color imcColor(double imc) {
       if (imc == 0) return AppTheme.textLight;
       if (imc < 18.5) return Colors.orange;
       if (imc < 25.0) return AppTheme.primary;
@@ -730,13 +711,25 @@ class _DashboardScreenState extends State<DashboardScreen>
             label: 'IMC',
             value: _bmiValue > 0 ? _bmiValue.toStringAsFixed(1) : '--',
             unit: 'kg/m²',
-            status: _imcStatus(_bmiValue),
-            statusColor: _imcColor(_bmiValue),
+            status: imcStatus(_bmiValue),
+            statusColor: imcColor(_bmiValue),
           ),
           const Divider(color: AppTheme.divider, height: 24),
-          _BiometricRow(label: 'Gordura Corporal', value: _gorduraCorporal > 0 ? _gorduraCorporal.toStringAsFixed(1) : '--', unit: '%', status: 'Ideal', statusColor: AppTheme.primaryLight),
+          _BiometricRow(
+            label: 'Gordura Corporal',
+            value: _gorduraCorporal > 0 ? _gorduraCorporal.toStringAsFixed(1) : '--',
+            unit: '%',
+            status: 'Ideal',
+            statusColor: AppTheme.primaryLight,
+          ),
           const Divider(color: AppTheme.divider, height: 24),
-          _BiometricRow(label: 'Massa Muscular', value: _massaMuscular > 0 ? _massaMuscular.toStringAsFixed(1) : '--', unit: 'kg', status: 'Boa', statusColor: const Color(0xFF2196F3)),
+          _BiometricRow(
+            label: 'Massa Muscular',
+            value: _massaMuscular > 0 ? _massaMuscular.toStringAsFixed(1) : '--',
+            unit: 'kg',
+            status: 'Boa',
+            statusColor: const Color(0xFF2196F3),
+          ),
         ],
       ),
     );
@@ -791,15 +784,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           backgroundColor: AppTheme.primary,
           elevation: 4,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          icon: const Icon(Icons.chat_bubble_outline_rounded,
-              color: Colors.white, size: 20),
+          icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 20),
           label: const Text(
             'Consultar Nutricionista IA',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
           ),
         ),
       ),
@@ -855,9 +843,7 @@ class _BiometricRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: const TextStyle(
-                fontSize: 14, color: AppTheme.textMedium)),
+        Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.textMedium)),
         Row(
           children: [
             RichText(
@@ -882,8 +868,7 @@ class _BiometricRow extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: statusColor.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(6),

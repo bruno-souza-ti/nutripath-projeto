@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../main.dart';
 import '../database/nutri_repository.dart';
+import '../services/auth_service.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -43,22 +44,30 @@ class _PerfilScreenState extends State<PerfilScreen>
     _carregarDados();
   }
 
-  Future<void> _carregarDados() async {
-    setState(() => _isLoading = true);
-    final dados = await _repo.getDashboard(_usuarioId);
-    final perfil = await _repo.getPerfil(_usuarioId);
-    final historico = await _repo.getHistoricoPeso(_usuarioId);
-    setState(() {
-      _nome = dados['nome'] ?? 'Usuário';
-      _email = perfil['email'] ?? '';
-      _pesoAtual = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
-      _alturaAtual = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
-      _imcAtual = (dados['imc'] as num?)?.toDouble() ?? 0;
-      _objetivo = perfil['objetivo'] ?? '';
-      _historico = historico;
-      _isLoading = false;
-    });
-  }
+Future<void> _carregarDados() async {
+  setState(() => _isLoading = true);
+
+  // Busca nome e email reais do usuário logado via AuthService
+  final userAuth = await AuthService.getUser();
+  final nomeAuth = userAuth?['nome'] ?? userAuth?['name'] ?? '';
+  final emailAuth = userAuth?['email'] ?? '';
+
+  final dados = await _repo.getDashboard(_usuarioId);
+  final perfil = await _repo.getPerfil(_usuarioId);
+  final historico = await _repo.getHistoricoPeso(_usuarioId);
+
+  setState(() {
+    _nome = nomeAuth.isNotEmpty ? nomeAuth : (dados['nome'] ?? 'Usuário');
+    _email = emailAuth.isNotEmpty ? emailAuth : (perfil['email'] ?? '');
+    _pesoAtual = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
+    _alturaAtual = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
+    _imcAtual = (dados['imc'] as num?)?.toDouble() ?? 0;
+    _objetivo = perfil['objetivo'] ?? '';
+    _historico = historico;
+    _isLoading = false;
+  });
+}
+
 
   String _imcClassificacao(double imc) {
     if (imc == 0) return '—';
@@ -156,6 +165,15 @@ class _PerfilScreenState extends State<PerfilScreen>
                     nome: nomeCtrl.text.trim(),
                     objetivo: objetivoSelecionado ?? '',
                   );
+
+                  // Atualiza o nome também no SharedPreferences para refletir no dashboard
+                  final userAuth = await AuthService.getUser();
+                  if (userAuth != null) {
+                    userAuth['nome'] = nomeCtrl.text.trim();
+                    userAuth['name'] = nomeCtrl.text.trim();
+                    await AuthService.saveUserPublic(userAuth);
+                  }
+
                   if (ctx.mounted) Navigator.pop(ctx);
                   await _carregarDados();
                 }

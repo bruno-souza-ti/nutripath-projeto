@@ -1,12 +1,11 @@
 // lib/screens/chat_screen.dart
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 import '../../main.dart';
+import '../services/ai_service.dart';
 import '../services/auth_service.dart';
 
 // ─── Modelo de Mensagem ───────────────────────────────────────────────────────
@@ -35,7 +34,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isTyping = false;
 
-  // Mensagem de boas-vindas inicial
   final List<ChatMessage> _messages = [
     ChatMessage(
       text:
@@ -81,44 +79,19 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      final headers = await AuthService.getAuthHeaders();
-
-      final response = await http
-          .post(
-            Uri.parse('${AuthService.iaBaseUrl}/ai/chat'),
-            headers: headers,
-            body: jsonEncode({'prompt': text}),
-          )
-          .timeout(const Duration(seconds: 20));
+      final aiText = await AiService.chat(text);
 
       if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        final aiText = data['response'] ??
-            data['resposta'] ??
-            data['message'] ??
-            data['content'] ??
-            'Não consegui processar sua mensagem.';
-
-        setState(() {
-          _isTyping = false;
-          _messages.add(ChatMessage(
-            text: aiText.toString(),
-            isUser: false,
-            timestamp: DateTime.now(),
-          ));
-        });
-      } else {
-        _onApiError('O servidor retornou um erro (${response.statusCode}).');
-      }
-    } on SocketException {
-      _onApiError('Sem conexão com a internet. Verifique sua rede.');
-    } on TimeoutException {
-      _onApiError('O servidor demorou muito para responder. Tente novamente.');
-    } catch (_) {
-      _onApiError('Erro inesperado ao contatar a IA. Tente novamente.');
+      setState(() {
+        _isTyping = false;
+        _messages.add(ChatMessage(
+          text: aiText,
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
+      });
+    } catch (e) {
+      _onApiError(e.toString().replaceFirst('Exception: ', ''));
     }
 
     _scrollToBottom();
