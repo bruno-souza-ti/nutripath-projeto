@@ -18,7 +18,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   late Animation<double> _fadeAnim;
 
   final _repo = NutriRepository();
-  int _usuarioId = 1;
+  int? _usuarioId; // CORRIGIDO: nullable — null até ser resolvido da sessão
 
   String _userName = '';
   double _waterProgress = 0;
@@ -41,10 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    _fadeAnim = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOut,
-    );
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
   }
 
@@ -53,18 +50,38 @@ class _DashboardScreenState extends State<DashboardScreen>
     super.didChangeDependencies();
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
     if (args != null) {
-      _usuarioId = int.tryParse(args['usuarioId']?.toString() ?? '') ?? 1;
+      final idFromArgs = int.tryParse(args['usuarioId']?.toString() ?? '');
+      if (idFromArgs != null) {
+        _usuarioId = idFromArgs;
+        _carregarDados();
+        return;
+      }
     }
+    // CORRIGIDO: Se não veio por args, busca da sessão salva
+    _resolverUsuarioIdESessao();
+  }
+
+  Future<void> _resolverUsuarioIdESessao() async {
+    final localId = await AuthService.getLocalUsuarioId();
+    if (localId == null) {
+      // Sem sessão ativa — redireciona para login
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
+      }
+      return;
+    }
+    _usuarioId = localId;
     _carregarDados();
   }
 
   Future<void> _carregarDados() async {
+    if (_usuarioId == null) return;
     setState(() => _isLoading = true);
 
     final userAuth = await AuthService.getUser();
     final nomeAuth = userAuth?['nome'] ?? userAuth?['name'] ?? '';
 
-    final dados = await _repo.getDashboard(_usuarioId);
+    final dados = await _repo.getDashboard(_usuarioId!);
     setState(() {
       _userName = nomeAuth.isNotEmpty ? nomeAuth : (dados['nome'] ?? 'Usuário');
       _consumedCalories = dados['calorias_consumidas'] ?? 0;
@@ -76,23 +93,30 @@ class _DashboardScreenState extends State<DashboardScreen>
       _bmiValue = (dados['imc'] as num?)?.toDouble() ?? 0;
       _gorduraCorporal = (dados['gordura_corporal'] as num?)?.toDouble() ?? 0;
       _massaMuscular = (dados['massa_muscular'] as num?)?.toDouble() ?? 0;
-      _calorieProgress = _goalCalories > 0 ? _consumedCalories / _goalCalories : 0;
+      _calorieProgress = _goalCalories > 0
+          ? _consumedCalories / _goalCalories
+          : 0;
       _waterProgress = _goalAguaMl > 0 ? _aguaMl / _goalAguaMl : 0;
       _isLoading = false;
     });
   }
 
   Future<void> _registrarAgua() async {
-    await _repo.registrarAgua(_usuarioId, 250);
+    if (_usuarioId == null) return;
+    await _repo.registrarAgua(_usuarioId!, 250);
     await _carregarDados();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('💧 250ml registrados!'), backgroundColor: Colors.blue),
+        const SnackBar(
+          content: Text('💧 250ml registrados!'),
+          backgroundColor: Colors.blue,
+        ),
       );
     }
   }
 
   Future<void> _registrarRefeicao() async {
+    if (_usuarioId == null) return;
     final descController = TextEditingController();
     final calController = TextEditingController();
     String tipoSelecionado = 'almoco';
@@ -104,14 +128,24 @@ class _DashboardScreenState extends State<DashboardScreen>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: descController, decoration: const InputDecoration(labelText: 'Descrição')),
+            TextField(
+              controller: descController,
+              decoration: const InputDecoration(labelText: 'Descrição'),
+            ),
             const SizedBox(height: 8),
-            TextField(controller: calController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Calorias (kcal)')),
+            TextField(
+              controller: calController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Calorias (kcal)'),
+            ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               value: tipoSelecionado,
               items: const [
-                DropdownMenuItem(value: 'cafe_manha', child: Text('Café da manhã')),
+                DropdownMenuItem(
+                  value: 'cafe_manha',
+                  child: Text('Café da manhã'),
+                ),
                 DropdownMenuItem(value: 'almoco', child: Text('Almoço')),
                 DropdownMenuItem(value: 'lanche', child: Text('Lanche')),
                 DropdownMenuItem(value: 'jantar', child: Text('Jantar')),
@@ -122,12 +156,16 @@ class _DashboardScreenState extends State<DashboardScreen>
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             onPressed: () async {
-              if (descController.text.isNotEmpty && calController.text.isNotEmpty) {
+              if (descController.text.isNotEmpty &&
+                  calController.text.isNotEmpty) {
                 await _repo.registrarRefeicao(
-                  usuarioId: _usuarioId,
+                  usuarioId: _usuarioId!,
                   descricao: descController.text,
                   calorias: int.tryParse(calController.text) ?? 0,
                   tipo: tipoSelecionado,
@@ -144,6 +182,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _registrarPeso() async {
+    if (_usuarioId == null) return;
     final pesoController = TextEditingController();
     final alturaController = TextEditingController();
 
@@ -159,8 +198,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             Text('⚖️', style: TextStyle(fontSize: 22)),
             SizedBox(width: 8),
-            Text('Registrar Peso',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(
+              'Registrar Peso',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         content: Column(
@@ -168,23 +209,31 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             TextField(
               controller: pesoController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Peso (kg)',
                 hintText: 'Ex: 65.4',
                 prefixIcon: const Icon(Icons.monitor_weight_outlined, size: 20),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: alturaController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Altura (cm)',
                 hintText: 'Ex: 170',
                 prefixIcon: const Icon(Icons.height_rounded, size: 20),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -195,18 +244,27 @@ class _DashboardScreenState extends State<DashboardScreen>
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () async {
-              final peso = double.tryParse(pesoController.text.replaceAll(',', '.'));
-              final altura = double.tryParse(alturaController.text.replaceAll(',', '.'));
+              final peso = double.tryParse(
+                pesoController.text.replaceAll(',', '.'),
+              );
+              final altura = double.tryParse(
+                alturaController.text.replaceAll(',', '.'),
+              );
               if (peso != null && altura != null && altura > 0) {
                 await _repo.registrarPeso(
-                  usuarioId: _usuarioId,
+                  usuarioId: _usuarioId!,
                   pesoKg: peso,
                   alturaCm: altura,
                 );
@@ -216,7 +274,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                   final imc = peso / ((altura / 100) * (altura / 100));
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('✅ Peso registrado! IMC: ${imc.toStringAsFixed(1)}'),
+                      content: Text(
+                        '✅ Peso registrado! IMC: ${imc.toStringAsFixed(1)}',
+                      ),
                       backgroundColor: AppTheme.primary,
                     ),
                   );
@@ -238,7 +298,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _verHistorico() async {
-    final historico = await _repo.getHistoricoPeso(_usuarioId);
+    if (_usuarioId == null) return;
+    final historico = await _repo.getHistoricoPeso(_usuarioId!);
     if (!mounted) return;
     showDialog(
       context: context,
@@ -248,8 +309,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             Text('📊', style: TextStyle(fontSize: 22)),
             SizedBox(width: 8),
-            Text('Histórico de Peso',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(
+              'Histórico de Peso',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         content: SizedBox(
@@ -257,7 +320,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: historico.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('Nenhum registro ainda.', textAlign: TextAlign.center),
+                  child: Text(
+                    'Nenhum registro ainda.',
+                    textAlign: TextAlign.center,
+                  ),
                 )
               : ListView.separated(
                   shrinkWrap: true,
@@ -277,23 +343,35 @@ class _DashboardScreenState extends State<DashboardScreen>
                           color: AppTheme.accent,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.monitor_weight_outlined,
-                            color: AppTheme.primary, size: 20),
+                        child: const Icon(
+                          Icons.monitor_weight_outlined,
+                          color: AppTheme.primary,
+                          size: 20,
+                        ),
                       ),
                       title: Text(
                         '${r['peso_kg']} kg${altura > 0 ? '  •  ${altura.toStringAsFixed(0)} cm' : ''}',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       subtitle: Text(
                         'IMC ${imc.toStringAsFixed(1)}  •  ${data.day}/${data.month}/${data.year}',
-                        style: const TextStyle(fontSize: 12, color: AppTheme.textLight),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textLight,
+                        ),
                       ),
                     );
                   },
                 ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar'))
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
+          ),
         ],
       ),
     );
@@ -310,7 +388,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _handleLogout() async {
-    await AuthService.logout(); // limpa token, user_data e local_usuario_id
+    await AuthService.logout();
     if (mounted) {
       Navigator.pushReplacementNamed(context, AppRoutes.login);
     }
@@ -319,9 +397,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return Scaffold(
       backgroundColor: AppTheme.surface,
@@ -385,7 +461,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                 color: AppTheme.primary,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.eco_rounded, color: Colors.white, size: 20),
+              child: const Icon(
+                Icons.eco_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 8),
             const Text(
@@ -404,12 +484,19 @@ class _DashboardScreenState extends State<DashboardScreen>
       actions: [
         IconButton(
           onPressed: () {},
-          icon: const Icon(Icons.notifications_none_rounded,
-              color: AppTheme.textDark, size: 24),
+          icon: const Icon(
+            Icons.notifications_none_rounded,
+            color: AppTheme.textDark,
+            size: 24,
+          ),
         ),
         IconButton(
           onPressed: _handleLogout,
-          icon: const Icon(Icons.logout_rounded, color: AppTheme.textDark, size: 22),
+          icon: const Icon(
+            Icons.logout_rounded,
+            color: AppTheme.textDark,
+            size: 22,
+          ),
         ),
         const SizedBox(width: 8),
       ],
@@ -421,8 +508,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     final greeting = hour < 12
         ? 'Bom dia'
         : hour < 18
-            ? 'Boa tarde'
-            : 'Boa noite';
+        ? 'Boa tarde'
+        : 'Boa noite';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -472,7 +559,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(20),
@@ -500,7 +590,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                   const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
@@ -583,7 +676,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               value: _calorieProgress,
               minHeight: 10,
               backgroundColor: AppTheme.accent,
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFF6A623)),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Color(0xFFF6A623),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -607,7 +702,11 @@ class _DashboardScreenState extends State<DashboardScreen>
             const SizedBox(height: 10),
             const Text(
               'Água',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textMedium),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textMedium,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -626,7 +725,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                 value: _waterProgress.clamp(0.0, 1.0),
                 minHeight: 8,
                 backgroundColor: const Color(0xFFE3F2FD),
-                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  Color(0xFF2196F3),
+                ),
               ),
             ),
             const SizedBox(height: 4),
@@ -649,7 +750,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 10),
           const Text(
             'Peso',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textMedium),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textMedium,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -670,7 +775,11 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             child: const Text(
               '↓ 0.3 kg esta semana',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.primary),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.primary,
+              ),
             ),
           ),
         ],
@@ -718,7 +827,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           const Divider(color: AppTheme.divider, height: 24),
           _BiometricRow(
             label: 'Gordura Corporal',
-            value: _gorduraCorporal > 0 ? _gorduraCorporal.toStringAsFixed(1) : '--',
+            value: _gorduraCorporal > 0
+                ? _gorduraCorporal.toStringAsFixed(1)
+                : '--',
             unit: '%',
             status: 'Ideal',
             statusColor: AppTheme.primaryLight,
@@ -726,7 +837,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           const Divider(color: AppTheme.divider, height: 24),
           _BiometricRow(
             label: 'Massa Muscular',
-            value: _massaMuscular > 0 ? _massaMuscular.toStringAsFixed(1) : '--',
+            value: _massaMuscular > 0
+                ? _massaMuscular.toStringAsFixed(1)
+                : '--',
             unit: 'kg',
             status: 'Boa',
             statusColor: const Color(0xFF2196F3),
@@ -784,11 +897,21 @@ class _DashboardScreenState extends State<DashboardScreen>
           onPressed: _goToChat,
           backgroundColor: AppTheme.primary,
           elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          icon: const Icon(
+            Icons.chat_bubble_outline_rounded,
+            color: Colors.white,
+            size: 20,
+          ),
           label: const Text(
             'Consultar Nutricionista IA',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
           ),
         ),
       ),
@@ -844,7 +967,10 @@ class _BiometricRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.textMedium)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 14, color: AppTheme.textMedium),
+        ),
         Row(
           children: [
             RichText(

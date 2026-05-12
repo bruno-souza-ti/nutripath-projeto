@@ -5,14 +5,27 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._internal();
-  static Database? _database;
+
+  // CORREÇÃO: _database não é mais estático em si, mas é gerenciado pela
+  // instância singleton. Adicionamos reset() para invalidar o cache
+  // entre sessões caso necessário.
+  Database? _database;
 
   DatabaseHelper._internal();
 
   Future<Database> get database async {
-    if (_database != null) return _database!;
+    if (_database != null && _database!.isOpen) return _database!;
     _database = await _initDatabase();
     return _database!;
+  }
+
+  /// Fecha e invalida o banco em cache. Útil ao trocar de usuário
+  /// para garantir que não há estado residual na conexão.
+  Future<void> resetDatabase() async {
+    if (_database != null && _database!.isOpen) {
+      await _database!.close();
+    }
+    _database = null;
   }
 
   Future<Database> _initDatabase() async {
@@ -21,22 +34,21 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3, // incrementado de 2 → 3
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Cada bloco é cumulativo: se vier do v1, roda v1→v2 e depois v2→v3
     if (oldVersion < 2) {
       try {
         await db.execute(
-            'ALTER TABLE usuarios ADD COLUMN objetivo TEXT NOT NULL DEFAULT ""');
+          'ALTER TABLE usuarios ADD COLUMN objetivo TEXT NOT NULL DEFAULT ""',
+        );
       } catch (_) {}
     }
     if (oldVersion < 3) {
-      // Adiciona tabela de logs do chat com a IA
       await db.execute('''
         CREATE TABLE IF NOT EXISTS interview_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +64,6 @@ class DatabaseHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    // ── Usuários ──────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +75,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ── Biometria ─────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE biometria (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +89,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ── Refeições ─────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE refeicoes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,7 +104,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ── Água ──────────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE agua (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,7 +114,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ── Metas ─────────────────────────────────────────────────────────────────
     await db.execute('''
       CREATE TABLE metas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,8 +125,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // ── Logs do chat com IA ───────────────────────────────────────────────────
-    // Campo "sincronizado": 0 = pendente, 1 = enviado ao servidor
     await db.execute('''
       CREATE TABLE interview_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,7 +136,5 @@ class DatabaseHelper {
         FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
       )
     ''');
-
-    // ── SEM seed data: usuários são criados apenas via cadastro ───────────────
   }
 }

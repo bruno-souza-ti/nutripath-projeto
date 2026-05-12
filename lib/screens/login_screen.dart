@@ -31,17 +31,11 @@ class _LoginScreenState extends State<LoginScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _fadeAnim = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOut,
-    );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOutCubic,
-    ));
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+        );
     _animController.forward();
   }
 
@@ -57,6 +51,10 @@ class _LoginScreenState extends State<LoginScreen>
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
+    // CORREÇÃO: limpa sessão anterior ANTES de fazer o novo login.
+    // Garante que nenhum ID ou token antigo vaze para a nova sessão.
+    await AuthService.logout();
+
     final result = await AuthService.login(
       _usernameController.text.trim(),
       _passwordController.text,
@@ -68,29 +66,29 @@ class _LoginScreenState extends State<LoginScreen>
       if (result['sucesso'] == true) {
         final usuario = result['usuario'] as Map<String, dynamic>;
 
-        // Resolve o email do usuário retornado pela API
         final email = (usuario['email'] as String? ?? '').trim();
-        final nome = (usuario['nome'] ?? usuario['name'] ?? 'Usuário') as String;
+        final nome =
+            (usuario['nome'] ?? usuario['name'] ?? 'Usuário') as String;
 
-        // Garante que existe um registro local para este usuário e
-        // obtém o ID correto no banco SQLite — isolando os dados por conta.
+        // CORREÇÃO: usa o username digitado como chave determinística de fallback,
+        // garantindo que cada conta sempre resolva para o mesmo registro local.
+        final emailChave = email.isNotEmpty
+            ? email
+            : '${_usernameController.text.trim()}@local';
+
         final repo = NutriRepository();
         final localId = await repo.getOuCriarUsuarioLocal(
-          email: email.isNotEmpty ? email : 'user_${usuario['id']}@local',
+          email: emailChave,
           nome: nome,
         );
 
-        // Persiste o ID local na sessão para uso em toda a app
         await AuthService.saveLocalUsuarioId(localId);
 
         if (mounted) {
           Navigator.pushReplacementNamed(
             context,
             AppRoutes.dashboard,
-            arguments: {
-              'usuarioId': localId,
-              'nome': nome,
-            },
+            arguments: {'usuarioId': localId, 'nome': nome},
           );
         }
       } else {
@@ -165,11 +163,7 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             ],
           ),
-          child: const Icon(
-            Icons.eco_rounded,
-            color: Colors.white,
-            size: 26,
-          ),
+          child: const Icon(Icons.eco_rounded, color: Colors.white, size: 26),
         ),
         const SizedBox(width: 12),
         const Column(
@@ -239,8 +233,11 @@ class _LoginScreenState extends State<LoginScreen>
             decoration: const InputDecoration(
               labelText: 'Username (login)',
               hintText: 'seu_usuario',
-              prefixIcon: Icon(Icons.person_outline_rounded,
-                  color: AppTheme.textLight, size: 20),
+              prefixIcon: Icon(
+                Icons.person_outline_rounded,
+                color: AppTheme.textLight,
+                size: 20,
+              ),
             ),
             validator: (v) {
               if (v == null || v.trim().isEmpty) return 'Informe o username';
@@ -256,8 +253,11 @@ class _LoginScreenState extends State<LoginScreen>
             decoration: InputDecoration(
               labelText: 'Senha',
               hintText: '••••••••',
-              prefixIcon: const Icon(Icons.lock_outline_rounded,
-                  color: AppTheme.textLight, size: 20),
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                color: AppTheme.textLight,
+                size: 20,
+              ),
               suffixIcon: IconButton(
                 onPressed: () =>
                     setState(() => _obscurePassword = !_obscurePassword),

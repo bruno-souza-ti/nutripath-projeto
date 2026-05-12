@@ -14,7 +14,7 @@ class _PerfilScreenState extends State<PerfilScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _repo = NutriRepository();
-  int _usuarioId = 1;
+  int? _usuarioId; // CORRIGIDO: nullable
 
   // Dados do perfil
   String _nome = '';
@@ -39,35 +39,52 @@ class _PerfilScreenState extends State<PerfilScreen>
     super.didChangeDependencies();
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
     if (args != null) {
-      _usuarioId = args['usuarioId'] ?? 1;
+      final idFromArgs = args['usuarioId'];
+      if (idFromArgs != null) {
+        _usuarioId = idFromArgs is int
+            ? idFromArgs
+            : int.tryParse(idFromArgs.toString());
+        _carregarDados();
+        return;
+      }
     }
+    // CORRIGIDO: Se não veio por args, busca da sessão salva
+    _resolverUsuarioIdESessao();
+  }
+
+  Future<void> _resolverUsuarioIdESessao() async {
+    final localId = await AuthService.getLocalUsuarioId();
+    if (localId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, AppRoutes.login);
+      return;
+    }
+    _usuarioId = localId;
     _carregarDados();
   }
 
-Future<void> _carregarDados() async {
-  setState(() => _isLoading = true);
+  Future<void> _carregarDados() async {
+    if (_usuarioId == null) return;
+    setState(() => _isLoading = true);
 
-  // Busca nome e email reais do usuário logado via AuthService
-  final userAuth = await AuthService.getUser();
-  final nomeAuth = userAuth?['nome'] ?? userAuth?['name'] ?? '';
-  final emailAuth = userAuth?['email'] ?? '';
+    final userAuth = await AuthService.getUser();
+    final nomeAuth = userAuth?['nome'] ?? userAuth?['name'] ?? '';
+    final emailAuth = userAuth?['email'] ?? '';
 
-  final dados = await _repo.getDashboard(_usuarioId);
-  final perfil = await _repo.getPerfil(_usuarioId);
-  final historico = await _repo.getHistoricoPeso(_usuarioId);
+    final dados = await _repo.getDashboard(_usuarioId!);
+    final perfil = await _repo.getPerfil(_usuarioId!);
+    final historico = await _repo.getHistoricoPeso(_usuarioId!);
 
-  setState(() {
-    _nome = nomeAuth.isNotEmpty ? nomeAuth : (dados['nome'] ?? 'Usuário');
-    _email = emailAuth.isNotEmpty ? emailAuth : (perfil['email'] ?? '');
-    _pesoAtual = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
-    _alturaAtual = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
-    _imcAtual = (dados['imc'] as num?)?.toDouble() ?? 0;
-    _objetivo = perfil['objetivo'] ?? '';
-    _historico = historico;
-    _isLoading = false;
-  });
-}
-
+    setState(() {
+      _nome = nomeAuth.isNotEmpty ? nomeAuth : (dados['nome'] ?? 'Usuário');
+      _email = emailAuth.isNotEmpty ? emailAuth : (perfil['email'] ?? '');
+      _pesoAtual = (dados['peso_kg'] as num?)?.toDouble() ?? 0;
+      _alturaAtual = (dados['altura_cm'] as num?)?.toDouble() ?? 0;
+      _imcAtual = (dados['imc'] as num?)?.toDouble() ?? 0;
+      _objetivo = perfil['objetivo'] ?? '';
+      _historico = historico;
+      _isLoading = false;
+    });
+  }
 
   String _imcClassificacao(double imc) {
     if (imc == 0) return '—';
@@ -87,8 +104,8 @@ Future<void> _carregarDados() async {
     return Colors.red;
   }
 
-  // ─── DIALOG: Editar Perfil ─────────────────────────────────────────────────
   Future<void> _editarPerfil() async {
+    if (_usuarioId == null) return;
     final nomeCtrl = TextEditingController(text: _nome);
     final objetivoCtrl = TextEditingController(text: _objetivo);
     String? objetivoSelecionado = _objetivo.isNotEmpty ? _objetivo : null;
@@ -106,13 +123,17 @@ Future<void> _carregarDados() async {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: const Row(
             children: [
               Text('✏️', style: TextStyle(fontSize: 20)),
               SizedBox(width: 8),
-              Text('Editar Perfil',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(
+                'Editar Perfil',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -124,9 +145,13 @@ Future<void> _carregarDados() async {
                   textCapitalization: TextCapitalization.words,
                   decoration: InputDecoration(
                     labelText: 'Nome completo',
-                    prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
+                    prefixIcon: const Icon(
+                      Icons.person_outline_rounded,
+                      size: 20,
+                    ),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -136,7 +161,8 @@ Future<void> _carregarDados() async {
                     labelText: 'Objetivo',
                     prefixIcon: const Icon(Icons.flag_outlined, size: 20),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   items: objetivos
                       .map((o) => DropdownMenuItem(value: o, child: Text(o)))
@@ -149,24 +175,25 @@ Future<void> _carregarDados() async {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar')),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 minimumSize: const Size(100, 44),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onPressed: () async {
                 if (nomeCtrl.text.trim().isNotEmpty) {
                   await _repo.atualizarPerfil(
-                    usuarioId: _usuarioId,
+                    usuarioId: _usuarioId!,
                     nome: nomeCtrl.text.trim(),
                     objetivo: objetivoSelecionado ?? '',
                   );
 
-                  // Atualiza o nome também no SharedPreferences para refletir no dashboard
                   final userAuth = await AuthService.getUser();
                   if (userAuth != null) {
                     userAuth['nome'] = nomeCtrl.text.trim();
@@ -178,8 +205,10 @@ Future<void> _carregarDados() async {
                   await _carregarDados();
                 }
               },
-              child: const Text('Salvar',
-                  style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Salvar',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),
@@ -187,24 +216,28 @@ Future<void> _carregarDados() async {
     );
   }
 
-  // ─── DIALOG: Adicionar Medição ─────────────────────────────────────────────
   Future<void> _adicionarMedicao({Map<String, dynamic>? edicao}) async {
+    if (_usuarioId == null) return;
     final pesoCtrl = TextEditingController(
-        text: edicao != null ? '${edicao['peso_kg']}' : '');
+      text: edicao != null ? '${edicao['peso_kg']}' : '',
+    );
     final alturaCtrl = TextEditingController(
-        text: edicao != null
-            ? '${(edicao['altura_cm'] as num).toInt()}'
-            : _alturaAtual > 0
-                ? _alturaAtual.toStringAsFixed(0)
-                : '');
+      text: edicao != null
+          ? '${(edicao['altura_cm'] as num).toInt()}'
+          : _alturaAtual > 0
+          ? _alturaAtual.toStringAsFixed(0)
+          : '',
+    );
     final gorduraCtrl = TextEditingController(
-        text: edicao != null && edicao['gordura_corporal'] != null
-            ? '${edicao['gordura_corporal']}'
-            : '');
+      text: edicao != null && edicao['gordura_corporal'] != null
+          ? '${edicao['gordura_corporal']}'
+          : '',
+    );
     final musculoCtrl = TextEditingController(
-        text: edicao != null && edicao['massa_muscular'] != null
-            ? '${edicao['massa_muscular']}'
-            : '');
+      text: edicao != null && edicao['massa_muscular'] != null
+          ? '${edicao['massa_muscular']}'
+          : '',
+    );
 
     final isEditing = edicao != null;
 
@@ -214,12 +247,12 @@ Future<void> _carregarDados() async {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Text(isEditing ? '✏️' : '➕',
-                style: const TextStyle(fontSize: 20)),
+            Text(isEditing ? '✏️' : '➕', style: const TextStyle(fontSize: 20)),
             const SizedBox(width: 8),
-            Text(isEditing ? 'Editar Medição' : 'Nova Medição',
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(
+              isEditing ? 'Editar Medição' : 'Nova Medição',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         content: SingleChildScrollView(
@@ -232,15 +265,18 @@ Future<void> _carregarDados() async {
                     child: TextField(
                       controller: pesoCtrl,
                       keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
+                        decimal: true,
+                      ),
                       decoration: InputDecoration(
                         labelText: 'Peso (kg)',
                         hintText: 'Ex: 70.5',
                         prefixIcon: const Icon(
-                            Icons.monitor_weight_outlined,
-                            size: 20),
+                          Icons.monitor_weight_outlined,
+                          size: 20,
+                        ),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -254,7 +290,8 @@ Future<void> _carregarDados() async {
                         hintText: 'Ex: 170',
                         prefixIcon: const Icon(Icons.height_rounded, size: 20),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -267,13 +304,15 @@ Future<void> _carregarDados() async {
                     child: TextField(
                       controller: gorduraCtrl,
                       keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
+                        decimal: true,
+                      ),
                       decoration: InputDecoration(
                         labelText: 'Gordura (%)',
                         hintText: 'Opcional',
                         prefixIcon: const Icon(Icons.percent_rounded, size: 20),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -282,14 +321,18 @@ Future<void> _carregarDados() async {
                     child: TextField(
                       controller: musculoCtrl,
                       keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
+                        decimal: true,
+                      ),
                       decoration: InputDecoration(
                         labelText: 'Músculo (kg)',
                         hintText: 'Opcional',
-                        prefixIcon: const Icon(Icons.fitness_center_rounded,
-                            size: 20),
+                        prefixIcon: const Icon(
+                          Icons.fitness_center_rounded,
+                          size: 20,
+                        ),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -304,14 +347,16 @@ Future<void> _carregarDados() async {
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.info_outline_rounded,
-                        color: AppTheme.primary, size: 16),
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: AppTheme.primary,
+                      size: 16,
+                    ),
                     SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         'O IMC é calculado automaticamente com peso e altura.',
-                        style: TextStyle(
-                            fontSize: 11, color: AppTheme.primary),
+                        style: TextStyle(fontSize: 11, color: AppTheme.primary),
                       ),
                     ),
                   ],
@@ -322,32 +367,37 @@ Future<void> _carregarDados() async {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
               minimumSize: const Size(100, 44),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () async {
-              final peso =
-                  double.tryParse(pesoCtrl.text.replaceAll(',', '.'));
-              final altura =
-                  double.tryParse(alturaCtrl.text.replaceAll(',', '.'));
+              final peso = double.tryParse(pesoCtrl.text.replaceAll(',', '.'));
+              final altura = double.tryParse(
+                alturaCtrl.text.replaceAll(',', '.'),
+              );
               if (peso == null || altura == null || altura <= 0) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
                   const SnackBar(
-                      content: Text('Preencha peso e altura corretamente.'),
-                      backgroundColor: Colors.redAccent),
+                    content: Text('Preencha peso e altura corretamente.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
                 );
                 return;
               }
               final gordura = double.tryParse(
-                  gorduraCtrl.text.replaceAll(',', '.'));
+                gorduraCtrl.text.replaceAll(',', '.'),
+              );
               final musculo = double.tryParse(
-                  musculoCtrl.text.replaceAll(',', '.'));
+                musculoCtrl.text.replaceAll(',', '.'),
+              );
 
               if (isEditing) {
                 await _repo.atualizarMedicao(
@@ -359,7 +409,7 @@ Future<void> _carregarDados() async {
                 );
               } else {
                 await _repo.registrarPeso(
-                  usuarioId: _usuarioId,
+                  usuarioId: _usuarioId!,
                   pesoKg: peso,
                   alturaCm: altura,
                   gorduraCorporal: gordura,
@@ -371,23 +421,28 @@ Future<void> _carregarDados() async {
               await _carregarDados();
               if (mounted) {
                 final imc = peso / ((altura / 100) * (altura / 100));
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(isEditing
-                      ? '✅ Medição atualizada! IMC: ${imc.toStringAsFixed(1)}'
-                      : '✅ Medição registrada! IMC: ${imc.toStringAsFixed(1)}'),
-                  backgroundColor: AppTheme.primary,
-                ));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      isEditing
+                          ? '✅ Medição atualizada! IMC: ${imc.toStringAsFixed(1)}'
+                          : '✅ Medição registrada! IMC: ${imc.toStringAsFixed(1)}',
+                    ),
+                    backgroundColor: AppTheme.primary,
+                  ),
+                );
               }
             },
-            child: Text(isEditing ? 'Atualizar' : 'Salvar',
-                style: const TextStyle(color: Colors.white)),
+            child: Text(
+              isEditing ? 'Atualizar' : 'Salvar',
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ─── CONFIRMAR EXCLUSÃO ────────────────────────────────────────────────────
   Future<void> _confirmarExclusao(int id) async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -395,21 +450,23 @@ Future<void> _carregarDados() async {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Excluir medição?'),
         content: const Text(
-            'Essa ação não pode ser desfeita. Deseja continuar?'),
+          'Essa ação não pode ser desfeita. Deseja continuar?',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               minimumSize: const Size(100, 44),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Excluir',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Excluir', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -420,8 +477,9 @@ Future<void> _carregarDados() async {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Medição excluída.'),
-              backgroundColor: Colors.redAccent),
+            content: Text('Medição excluída.'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
@@ -436,8 +494,7 @@ Future<void> _carregarDados() async {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-          body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -450,10 +507,7 @@ Future<void> _carregarDados() async {
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildPerfilTab(),
-                  _buildHistoricoTab(),
-                ],
+                children: [_buildPerfilTab(), _buildHistoricoTab()],
               ),
             ),
           ],
@@ -463,11 +517,14 @@ Future<void> _carregarDados() async {
         onPressed: _adicionarMedicao,
         backgroundColor: AppTheme.primary,
         icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: const Text('Nova Medição',
-            style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 15)),
+        label: const Text(
+          'Nova Medição',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
@@ -515,8 +572,11 @@ Future<void> _carregarDados() async {
                           color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(Icons.person_rounded,
-                            color: Colors.white, size: 30),
+                        child: const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -533,15 +593,20 @@ Future<void> _carregarDados() async {
                               ),
                             ),
                             if (_email.isNotEmpty)
-                              Text(_email,
-                                  style: TextStyle(
-                                      color: Colors.white.withOpacity(0.7),
-                                      fontSize: 13)),
+                              Text(
+                                _email,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 13,
+                                ),
+                              ),
                             if (_objetivo.isNotEmpty) ...[
                               const SizedBox(height: 4),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(8),
@@ -549,7 +614,9 @@ Future<void> _carregarDados() async {
                                 child: Text(
                                   '🎯 $_objetivo',
                                   style: const TextStyle(
-                                      color: Colors.white, fontSize: 11),
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                  ),
                                 ),
                               ),
                             ],
@@ -576,8 +643,7 @@ Future<void> _carregarDados() async {
         unselectedLabelColor: AppTheme.textLight,
         indicatorColor: AppTheme.primary,
         indicatorWeight: 2.5,
-        labelStyle:
-            const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         tabs: const [
           Tab(text: 'Meu Perfil'),
           Tab(text: 'Histórico de Medições'),
@@ -586,14 +652,12 @@ Future<void> _carregarDados() async {
     );
   }
 
-  // ─── ABA 1: PERFIL ─────────────────────────────────────────────────────────
   Widget _buildPerfilTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cards de métricas atuais
           _buildSectionTitle('Métricas Atuais'),
           const SizedBox(height: 14),
           Row(
@@ -622,17 +686,12 @@ Future<void> _carregarDados() async {
             ],
           ),
           const SizedBox(height: 12),
-          // Card do IMC
           if (_imcAtual > 0) _buildImcCard(),
           const SizedBox(height: 24),
-
-          // Informações do perfil
           _buildSectionTitle('Informações Pessoais'),
           const SizedBox(height: 14),
           _buildInfoCard(),
           const SizedBox(height: 24),
-
-          // Guia de IMC
           _buildSectionTitle('Tabela de IMC'),
           const SizedBox(height: 14),
           _buildImcTable(),
@@ -665,9 +724,10 @@ Future<void> _carregarDados() async {
               child: Text(
                 _imcAtual.toStringAsFixed(1),
                 style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: cor),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: cor,
+                ),
               ),
             ),
           ),
@@ -676,16 +736,18 @@ Future<void> _carregarDados() async {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('IMC (Índice de Massa Corporal)',
-                    style: TextStyle(
-                        fontSize: 12, color: AppTheme.textLight)),
+                const Text(
+                  'IMC (Índice de Massa Corporal)',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   classificacao,
                   style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: cor),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: cor,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 LinearProgressIndicator(
@@ -712,32 +774,37 @@ Future<void> _carregarDados() async {
         border: Border.all(color: AppTheme.divider),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
         children: [
           _InfoRow(
-              icon: Icons.person_outline_rounded,
-              label: 'Nome',
-              value: _nome),
+            icon: Icons.person_outline_rounded,
+            label: 'Nome',
+            value: _nome,
+          ),
           const Divider(color: AppTheme.divider, height: 20),
           _InfoRow(
-              icon: Icons.mail_outline_rounded,
-              label: 'E-mail',
-              value: _email.isNotEmpty ? _email : '—'),
+            icon: Icons.mail_outline_rounded,
+            label: 'E-mail',
+            value: _email.isNotEmpty ? _email : '—',
+          ),
           const Divider(color: AppTheme.divider, height: 20),
           _InfoRow(
-              icon: Icons.flag_outlined,
-              label: 'Objetivo',
-              value: _objetivo.isNotEmpty ? _objetivo : 'Não definido'),
+            icon: Icons.flag_outlined,
+            label: 'Objetivo',
+            value: _objetivo.isNotEmpty ? _objetivo : 'Não definido',
+          ),
           const Divider(color: AppTheme.divider, height: 20),
           _InfoRow(
-              icon: Icons.format_list_numbered_rounded,
-              label: 'Medições registradas',
-              value: '${_historico.length}'),
+            icon: Icons.format_list_numbered_rounded,
+            label: 'Medições registradas',
+            value: '${_historico.length}',
+          ),
         ],
       ),
     );
@@ -745,12 +812,24 @@ Future<void> _carregarDados() async {
 
   Widget _buildImcTable() {
     final faixas = [
-      {'faixa': 'Abaixo de 18.5', 'class': 'Abaixo do peso', 'cor': Colors.orange},
+      {
+        'faixa': 'Abaixo de 18.5',
+        'class': 'Abaixo do peso',
+        'cor': Colors.orange,
+      },
       {'faixa': '18.5 – 24.9', 'class': 'Peso normal', 'cor': AppTheme.primary},
       {'faixa': '25.0 – 29.9', 'class': 'Sobrepeso', 'cor': Colors.orange},
-      {'faixa': '30.0 – 34.9', 'class': 'Obesidade grau I', 'cor': Colors.deepOrange},
+      {
+        'faixa': '30.0 – 34.9',
+        'class': 'Obesidade grau I',
+        'cor': Colors.deepOrange,
+      },
       {'faixa': '35.0 – 39.9', 'class': 'Obesidade grau II', 'cor': Colors.red},
-      {'faixa': '≥ 40.0', 'class': 'Obesidade grau III', 'cor': Colors.red.shade900},
+      {
+        'faixa': '≥ 40.0',
+        'class': 'Obesidade grau III',
+        'cor': Colors.red.shade900,
+      },
     ];
 
     return Container(
@@ -760,38 +839,45 @@ Future<void> _carregarDados() async {
         border: Border.all(color: AppTheme.divider),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
         children: [
-          // Cabeçalho
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: AppTheme.accent,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
             ),
             child: const Row(
               children: [
                 Expanded(
                   flex: 2,
-                  child: Text('Faixa de IMC',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textMedium)),
+                  child: Text(
+                    'Faixa de IMC',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textMedium,
+                    ),
+                  ),
                 ),
                 Expanded(
                   flex: 3,
-                  child: Text('Classificação',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textMedium)),
+                  child: Text(
+                    'Classificação',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textMedium,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -800,8 +886,8 @@ Future<void> _carregarDados() async {
             final i = entry.key;
             final f = entry.value;
             final cor = f['cor'] as Color;
-            final isDestaque = _imcAtual > 0 &&
-                _imcClassificacao(_imcAtual) == f['class'];
+            final isDestaque =
+                _imcAtual > 0 && _imcClassificacao(_imcAtual) == f['class'];
             return Container(
               decoration: BoxDecoration(
                 color: isDestaque ? cor.withOpacity(0.08) : Colors.transparent,
@@ -811,19 +897,21 @@ Future<void> _carregarDados() async {
                       : BorderSide.none,
                 ),
               ),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Expanded(
                     flex: 2,
-                    child: Text(f['faixa'] as String,
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: AppTheme.textMedium,
-                            fontWeight: isDestaque
-                                ? FontWeight.w600
-                                : FontWeight.w400)),
+                    child: Text(
+                      f['faixa'] as String,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textMedium,
+                        fontWeight: isDestaque
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
                   ),
                   Expanded(
                     flex: 3,
@@ -833,26 +921,37 @@ Future<void> _carregarDados() async {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                              color: cor, shape: BoxShape.circle),
+                            color: cor,
+                            shape: BoxShape.circle,
+                          ),
                         ),
                         const SizedBox(width: 8),
-                        Text(f['class'] as String,
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: cor,
-                                fontWeight: FontWeight.w600)),
+                        Text(
+                          f['class'] as String,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: cor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         if (isDestaque) ...[
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: cor,
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Text('← você',
-                                style: TextStyle(
-                                    color: Colors.white, fontSize: 10)),
+                            child: const Text(
+                              '← você',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                              ),
+                            ),
                           ),
                         ],
                       ],
@@ -867,7 +966,6 @@ Future<void> _carregarDados() async {
     );
   }
 
-  // ─── ABA 2: HISTÓRICO ──────────────────────────────────────────────────────
   Widget _buildHistoricoTab() {
     if (_historico.isEmpty) {
       return Center(
@@ -876,14 +974,19 @@ Future<void> _carregarDados() async {
           children: [
             const Text('📊', style: TextStyle(fontSize: 48)),
             const SizedBox(height: 12),
-            const Text('Nenhuma medição registrada',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textMedium)),
+            const Text(
+              'Nenhuma medição registrada',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textMedium,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text('Toque em "Nova Medição" para começar.',
-                style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
+            const Text(
+              'Toque em "Nova Medição" para começar.',
+              style: TextStyle(fontSize: 13, color: AppTheme.textLight),
+            ),
           ],
         ),
       );
@@ -892,7 +995,6 @@ Future<void> _carregarDados() async {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
       children: [
-        // Cabeçalho da tabela
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
@@ -913,8 +1015,9 @@ Future<void> _carregarDados() async {
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius:
-                const BorderRadius.vertical(bottom: Radius.circular(14)),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(14),
+            ),
             border: Border.all(color: AppTheme.divider),
           ),
           child: Column(
@@ -935,7 +1038,9 @@ Future<void> _carregarDados() async {
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -946,14 +1051,17 @@ Future<void> _carregarDados() async {
                           Text(
                             '${data.day.toString().padLeft(2, '0')}/${data.month.toString().padLeft(2, '0')}',
                             style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textDark),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textDark,
+                            ),
                           ),
                           Text(
                             '${data.year}',
                             style: const TextStyle(
-                                fontSize: 11, color: AppTheme.textLight),
+                              fontSize: 11,
+                              color: AppTheme.textLight,
+                            ),
                           ),
                         ],
                       ),
@@ -963,9 +1071,10 @@ Future<void> _carregarDados() async {
                       child: Text(
                         '${(r['peso_kg'] as num).toStringAsFixed(1)} kg',
                         style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textDark),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
+                        ),
                       ),
                     ),
                     Expanded(
@@ -973,14 +1082,18 @@ Future<void> _carregarDados() async {
                       child: Text(
                         '${(r['altura_cm'] as num).toStringAsFixed(0)} cm',
                         style: const TextStyle(
-                            fontSize: 13, color: AppTheme.textMedium),
+                          fontSize: 13,
+                          color: AppTheme.textMedium,
+                        ),
                       ),
                     ),
                     Expanded(
                       flex: 2,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 3),
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: cor.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(6),
@@ -988,9 +1101,10 @@ Future<void> _carregarDados() async {
                         child: Text(
                           imc.toStringAsFixed(1),
                           style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: cor),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: cor,
+                          ),
                         ),
                       ),
                     ),
@@ -1001,15 +1115,20 @@ Future<void> _carregarDados() async {
                         children: [
                           GestureDetector(
                             onTap: () => _adicionarMedicao(edicao: r),
-                            child: const Icon(Icons.edit_outlined,
-                                color: AppTheme.primary, size: 18),
+                            child: const Icon(
+                              Icons.edit_outlined,
+                              color: AppTheme.primary,
+                              size: 18,
+                            ),
                           ),
                           const SizedBox(width: 10),
                           GestureDetector(
-                            onTap: () =>
-                                _confirmarExclusao(r['id'] as int),
-                            child: const Icon(Icons.delete_outline_rounded,
-                                color: Colors.redAccent, size: 18),
+                            onTap: () => _confirmarExclusao(r['id'] as int),
+                            child: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: Colors.redAccent,
+                              size: 18,
+                            ),
                           ),
                         ],
                       ),
@@ -1031,12 +1150,15 @@ Future<void> _carregarDados() async {
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(title,
-        style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textDark,
-            letterSpacing: -0.3));
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        color: AppTheme.textDark,
+        letterSpacing: -0.3,
+      ),
+    );
   }
 }
 
@@ -1048,11 +1170,12 @@ class _MetricCard extends StatelessWidget {
   final String value;
   final Color color;
 
-  const _MetricCard(
-      {required this.icon,
-      required this.label,
-      required this.value,
-      required this.color});
+  const _MetricCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1068,18 +1191,24 @@ class _MetricCard extends StatelessWidget {
         children: [
           Text(icon, style: const TextStyle(fontSize: 24)),
           const SizedBox(height: 8),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 12,
-                  color: color.withOpacity(0.8),
-                  fontWeight: FontWeight.w500)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: color.withOpacity(0.8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: color,
-                  letterSpacing: -0.5)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: color,
+              letterSpacing: -0.5,
+            ),
+          ),
         ],
       ),
     );
@@ -1091,8 +1220,11 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _InfoRow(
-      {required this.icon, required this.label, required this.value});
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1104,14 +1236,18 @@ class _InfoRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppTheme.textLight)),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textDark)),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 11, color: AppTheme.textLight),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textDark,
+                ),
+              ),
             ],
           ),
         ),
@@ -1126,10 +1262,13 @@ class _ColHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(text,
-        style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textMedium));
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: AppTheme.textMedium,
+      ),
+    );
   }
 }

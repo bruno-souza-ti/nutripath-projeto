@@ -34,51 +34,51 @@ class NutriRepository {
   }
 
   /// Retorna o ID local (SQLite) do usuário identificado pelo e-mail.
-  /// Se não existir, cria o registro com nome e e-mail fornecidos.
-  /// Use após login bem-sucedido na API remota para garantir isolamento de dados.
+  /// Se não existir, cria o registro. Garante isolamento de dados por conta.
+  ///
+  /// CORREÇÃO: usa transação para evitar race condition de inserção dupla
+  /// caso o método seja chamado simultaneamente.
   Future<int> getOuCriarUsuarioLocal({
     required String email,
     required String nome,
   }) async {
     final db = await _db.database;
 
-    // Tenta encontrar pelo e-mail
-    final existing = await db.query(
-      'usuarios',
-      columns: ['id'],
-      where: 'email = ?',
-      whereArgs: [email],
-    );
-
-    if (existing.isNotEmpty) {
-      final id = existing.first['id'] as int;
-      // Atualiza o nome caso tenha mudado
-      await db.update(
+    return await db.transaction((txn) async {
+      final existing = await txn.query(
         'usuarios',
-        {'nome': nome},
-        where: 'id = ?',
-        whereArgs: [id],
+        columns: ['id'],
+        where: 'email = ?',
+        whereArgs: [email],
       );
+
+      if (existing.isNotEmpty) {
+        final id = existing.first['id'] as int;
+        await txn.update(
+          'usuarios',
+          {'nome': nome},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        return id;
+      }
+
+      final id = await txn.insert('usuarios', {
+        'nome': nome,
+        'email': email,
+        'senha': '',
+        'objetivo': '',
+        'criado_em': DateTime.now().toIso8601String(),
+      });
+
+      await txn.insert('metas', {
+        'usuario_id': id,
+        'meta_calorias': 2000,
+        'meta_agua_ml': 2000,
+      });
+
       return id;
-    }
-
-    // Cria novo registro local (sem senha — autenticação é via API)
-    final id = await db.insert('usuarios', {
-      'nome': nome,
-      'email': email,
-      'senha': '',
-      'objetivo': '',
-      'criado_em': DateTime.now().toIso8601String(),
     });
-
-    // Cria metas padrão para o novo usuário
-    await db.insert('metas', {
-      'usuario_id': id,
-      'meta_calorias': 2000,
-      'meta_agua_ml': 2000,
-    });
-
-    return id;
   }
 
   Future<Map<String, dynamic>> getPerfil(int usuarioId) async {
@@ -113,22 +113,37 @@ class NutriRepository {
 
     return await db.transaction((txn) async {
       final hoje = DateTime.now();
-      final inicioDia =
-          DateTime(hoje.year, hoje.month, hoje.day).toIso8601String();
-      final fimDia = DateTime(hoje.year, hoje.month, hoje.day, 23, 59, 59)
-          .toIso8601String();
+      final inicioDia = DateTime(
+        hoje.year,
+        hoje.month,
+        hoje.day,
+      ).toIso8601String();
+      final fimDia = DateTime(
+        hoje.year,
+        hoje.month,
+        hoje.day,
+        23,
+        59,
+        59,
+      ).toIso8601String();
 
-      final caloriasResult = await txn.rawQuery('''
+      final caloriasResult = await txn.rawQuery(
+        '''
         SELECT COALESCE(SUM(calorias), 0) as total
         FROM refeicoes
         WHERE usuario_id = ? AND registrado_em BETWEEN ? AND ?
-      ''', [usuarioId, inicioDia, fimDia]);
+      ''',
+        [usuarioId, inicioDia, fimDia],
+      );
 
-      final aguaResult = await txn.rawQuery('''
+      final aguaResult = await txn.rawQuery(
+        '''
         SELECT COALESCE(SUM(quantidade_ml), 0) as total
         FROM agua
         WHERE usuario_id = ? AND registrado_em BETWEEN ? AND ?
-      ''', [usuarioId, inicioDia, fimDia]);
+      ''',
+        [usuarioId, inicioDia, fimDia],
+      );
 
       final biometria = await txn.query(
         'biometria',
@@ -154,11 +169,9 @@ class NutriRepository {
         'nome': usuario.isNotEmpty ? usuario.first['nome'] : 'Usuário',
         'calorias_consumidas':
             (caloriasResult.first['total'] as num?)?.toInt() ?? 0,
-        'meta_calorias':
-            metas.isNotEmpty ? metas.first['meta_calorias'] : 2000,
+        'meta_calorias': metas.isNotEmpty ? metas.first['meta_calorias'] : 2000,
         'agua_ml': (aguaResult.first['total'] as num?)?.toInt() ?? 0,
-        'meta_agua_ml':
-            metas.isNotEmpty ? metas.first['meta_agua_ml'] : 2000,
+        'meta_agua_ml': metas.isNotEmpty ? metas.first['meta_agua_ml'] : 2000,
         'peso_kg':
             (biometria.isNotEmpty ? biometria.first['peso_kg'] : 0.0)
                 as double? ??
@@ -167,16 +180,16 @@ class NutriRepository {
             (biometria.isNotEmpty ? biometria.first['altura_cm'] : 0.0)
                 as double? ??
             0.0,
-        'imc': (biometria.isNotEmpty ? biometria.first['imc'] : 0.0)
+        'imc':
+            (biometria.isNotEmpty ? biometria.first['imc'] : 0.0) as double? ??
+            0.0,
+        'gordura_corporal':
+            (biometria.isNotEmpty ? biometria.first['gordura_corporal'] : 0.0)
                 as double? ??
             0.0,
-        'gordura_corporal': (biometria.isNotEmpty
-                ? biometria.first['gordura_corporal']
-                : 0.0) as double? ??
-            0.0,
-        'massa_muscular': (biometria.isNotEmpty
-                ? biometria.first['massa_muscular']
-                : 0.0) as double? ??
+        'massa_muscular':
+            (biometria.isNotEmpty ? biometria.first['massa_muscular'] : 0.0)
+                as double? ??
             0.0,
       };
     });
@@ -207,11 +220,19 @@ class NutriRepository {
   }
 
   Future<List<Map<String, dynamic>>> getRefeicoesDe(
-      int usuarioId, DateTime data) async {
+    int usuarioId,
+    DateTime data,
+  ) async {
     final db = await _db.database;
     final inicio = DateTime(data.year, data.month, data.day).toIso8601String();
-    final fim =
-        DateTime(data.year, data.month, data.day, 23, 59, 59).toIso8601String();
+    final fim = DateTime(
+      data.year,
+      data.month,
+      data.day,
+      23,
+      59,
+      59,
+    ).toIso8601String();
     return await db.query(
       'refeicoes',
       where: 'usuario_id = ? AND registrado_em BETWEEN ? AND ?',
@@ -310,8 +331,12 @@ class NutriRepository {
     if (metaCalorias != null) updates['meta_calorias'] = metaCalorias;
     if (metaAguaMl != null) updates['meta_agua_ml'] = metaAguaMl;
     if (metaPesoKg != null) updates['meta_peso_kg'] = metaPesoKg;
-    await db.update('metas', updates,
-        where: 'usuario_id = ?', whereArgs: [usuarioId]);
+    await db.update(
+      'metas',
+      updates,
+      where: 'usuario_id = ?',
+      whereArgs: [usuarioId],
+    );
   }
 
   // ─── INTERVIEW LOGS (Chat com IA) ─────────────────────────────────────────
@@ -342,7 +367,8 @@ class NutriRepository {
   }
 
   Future<List<Map<String, dynamic>>> getMensagensPendentes(
-      int usuarioId) async {
+    int usuarioId,
+  ) async {
     final db = await _db.database;
     return await db.query(
       'interview_logs',
